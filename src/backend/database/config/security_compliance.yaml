@@ -1,0 +1,648 @@
+# =====================================================
+# Security and Compliance Configuration
+# IPO Valuation Platform - Data Security Framework
+# =====================================================
+
+# =====================================================
+# ENCRYPTION CONFIGURATION
+# =====================================================
+
+encryption:
+  # Database encryption settings
+  database:
+    postgresql:
+      encryption_at_rest:
+        enabled: true
+        method: "AES-256"
+        key_management: "Google Cloud KMS"
+        key_rotation: "automatic"
+        rotation_period: "90 days"
+        
+      encryption_in_transit:
+        enabled: true
+        tls_version: "1.3"
+        cipher_suites:
+          - "TLS_AES_256_GCM_SHA384"
+          - "TLS_CHACHA20_POLY1305_SHA256"
+          - "TLS_AES_128_GCM_SHA256"
+        certificate_validation: "strict"
+        
+      field_level_encryption:
+        enabled: true
+        fields:
+          - "users.password_hash"
+          - "users.two_factor_secret" 
+          - "users.phone"
+          - "organizations.tax_id"
+          - "api_keys.key_hash"
+        encryption_algorithm: "AES-256-GCM"
+        
+    bigquery:
+      encryption_at_rest:
+        enabled: true
+        method: "Google-managed encryption keys"
+        customer_managed_keys: true
+        key_location: "us-central1"
+        
+    redis:
+      encryption_at_rest:
+        enabled: true
+        method: "AES-256"
+        
+      encryption_in_transit:
+        enabled: true
+        tls_version: "1.3"
+        auth_required: true
+        
+  # File storage encryption
+  cloud_storage:
+    encryption_at_rest:
+      enabled: true
+      method: "Google-managed keys"
+      customer_managed_keys: true
+      
+    encryption_in_transit:
+      enabled: true
+      https_only: true
+      
+  # Application-level encryption
+  application:
+    sensitive_data_encryption:
+      enabled: true
+      algorithm: "AES-256-GCM"
+      key_derivation: "PBKDF2"
+      salt_length: 32
+      iterations: 100000
+      
+    jwt_encryption:
+      enabled: true
+      algorithm: "RS256"
+      key_rotation: "monthly"
+      
+# =====================================================
+# ACCESS CONTROL AND AUTHENTICATION
+# =====================================================
+
+access_control:
+  # Multi-factor authentication
+  mfa:
+    enabled: true
+    required_for_roles: ["admin", "owner", "manager"]
+    methods:
+      - "totp"  # Time-based One-Time Password
+      - "sms"   # SMS verification
+      - "email" # Email verification
+    backup_codes: true
+    
+  # Single Sign-On (SSO)
+  sso:
+    enabled: true
+    providers:
+      google:
+        enabled: true
+        domain_restriction: true
+        allowed_domains: ["uprez.com", "client-domain.com"]
+        
+      azure_ad:
+        enabled: true
+        tenant_restriction: true
+        
+      okta:
+        enabled: true
+        
+    # SAML configuration
+    saml:
+      enabled: true
+      identity_provider_metadata: "/path/to/idp-metadata.xml"
+      service_provider_cert: "/path/to/sp-cert.pem"
+      
+  # Role-Based Access Control (RBAC)
+  rbac:
+    enabled: true
+    hierarchical: true
+    roles:
+      system_admin:
+        description: "Full system administration rights"
+        permissions:
+          - "system:*"
+          - "users:*"
+          - "organizations:*"
+          - "audit:read"
+          
+      organization_owner:
+        description: "Full control within organization"
+        permissions:
+          - "org:{org_id}:*"
+          - "users:manage_within_org"
+          - "valuations:*"
+          - "companies:*"
+          
+      organization_admin:
+        description: "Administrative rights within organization"
+        permissions:
+          - "org:{org_id}:read"
+          - "org:{org_id}:write"
+          - "users:invite"
+          - "valuations:approve"
+          
+      analyst:
+        description: "Create and edit valuations"
+        permissions:
+          - "companies:read"
+          - "valuations:create"
+          - "valuations:edit_own"
+          - "financials:read"
+          
+      viewer:
+        description: "Read-only access"
+        permissions:
+          - "companies:read"
+          - "valuations:read_shared"
+          - "reports:read"
+    
+    # Attribute-Based Access Control (ABAC)
+    abac:
+      enabled: true
+      attributes:
+        user_attributes:
+          - "department"
+          - "clearance_level" 
+          - "location"
+          - "employment_status"
+          
+        resource_attributes:
+          - "classification"
+          - "data_sensitivity"
+          - "organization_id"
+          - "created_by"
+          
+        environment_attributes:
+          - "time_of_access"
+          - "ip_address"
+          - "device_type"
+          - "network_location"
+          
+  # API Security
+  api_security:
+    authentication:
+      methods: ["jwt", "api_key", "oauth2"]
+      jwt:
+        issuer: "uprez-valuation.com"
+        audience: "uprez-api"
+        expiration: "24h"
+        refresh_token_expiration: "30d"
+        
+    rate_limiting:
+      enabled: true
+      default_limits:
+        anonymous: "100/hour"
+        authenticated: "1000/hour"
+        premium: "5000/hour"
+        enterprise: "unlimited"
+        
+      endpoint_specific:
+        "/api/v1/valuations": "50/minute"
+        "/api/v1/companies/search": "200/minute"
+        "/api/v1/upload": "10/minute"
+        
+    cors:
+      enabled: true
+      allowed_origins:
+        - "https://app.uprez.com"
+        - "https://*.uprez.com"
+      allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+      allowed_headers: ["Authorization", "Content-Type", "X-Requested-With"]
+      credentials: true
+      
+# =====================================================
+# DATA PRIVACY AND COMPLIANCE
+# =====================================================
+
+privacy:
+  # General Data Protection Regulation (GDPR)
+  gdpr:
+    enabled: true
+    data_protection_officer: "dpo@uprez.com"
+    
+    # Right to be forgotten
+    right_to_erasure:
+      enabled: true
+      automated_deletion: false  # Require manual review
+      retention_period: "30 days"  # Time to review deletion requests
+      
+    # Data portability
+    data_portability:
+      enabled: true
+      export_formats: ["json", "csv", "pdf"]
+      encryption_required: true
+      
+    # Consent management
+    consent_management:
+      enabled: true
+      granular_consent: true
+      consent_withdrawal: true
+      audit_trail: true
+      
+  # California Consumer Privacy Act (CCPA)
+  ccpa:
+    enabled: true
+    
+    # Right to know
+    data_categories:
+      personal_identifiers: ["email", "name", "phone"]
+      professional_information: ["title", "organization", "department"]
+      usage_data: ["login_times", "feature_usage", "preferences"]
+      
+    # Right to delete
+    deletion_categories:
+      - "personal_identifiers"
+      - "usage_data"
+      # Note: Financial data may have legal retention requirements
+      
+  # Personal Identifiable Information (PII) handling
+  pii_handling:
+    detection:
+      enabled: true
+      patterns:
+        email: '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        phone: '\b\d{3}-\d{3}-\d{4}\b'
+        ssn: '\b\d{3}-\d{2}-\d{4}\b'
+        credit_card: '\b\d{4}-\d{4}-\d{4}-\d{4}\b'
+        
+    masking:
+      enabled: true
+      methods:
+        email: "****@****.com"
+        phone: "***-***-****"
+        partial: "show_last_4"
+        
+    pseudonymization:
+      enabled: true
+      algorithm: "SHA-256"
+      salt_per_user: true
+      
+# =====================================================
+# AUDIT AND COMPLIANCE MONITORING
+# =====================================================
+
+audit:
+  # Comprehensive audit logging
+  logging:
+    enabled: true
+    log_level: "detailed"
+    
+    # Events to audit
+    events:
+      authentication:
+        - "login_success"
+        - "login_failure"
+        - "logout"
+        - "password_change"
+        - "mfa_setup"
+        
+      authorization:
+        - "permission_granted"
+        - "permission_denied"
+        - "role_assigned"
+        - "role_revoked"
+        
+      data_access:
+        - "record_viewed"
+        - "record_created"
+        - "record_updated"
+        - "record_deleted"
+        - "bulk_export"
+        
+      system_events:
+        - "configuration_change"
+        - "backup_created"
+        - "system_startup"
+        - "system_shutdown"
+        
+    # Log format and storage
+    format: "json"
+    storage:
+      primary: "cloud_logging"
+      backup: "cloud_storage"
+      retention: "7 years"
+      encryption: true
+      
+    # Real-time monitoring
+    real_time_alerts:
+      enabled: true
+      alert_on:
+        - "multiple_failed_logins"
+        - "unusual_access_patterns"
+        - "privilege_escalation"
+        - "bulk_data_export"
+        - "configuration_changes"
+        
+  # Compliance reporting
+  compliance_reporting:
+    automated_reports:
+      enabled: true
+      frequency: "monthly"
+      formats: ["pdf", "excel"]
+      
+    reports:
+      access_review:
+        description: "User access and permissions review"
+        frequency: "quarterly"
+        recipients: ["compliance@uprez.com", "security@uprez.com"]
+        
+      data_usage:
+        description: "Data access and usage patterns"
+        frequency: "monthly"
+        recipients: ["dpo@uprez.com"]
+        
+      security_incidents:
+        description: "Security incidents and resolutions"
+        frequency: "monthly"
+        recipients: ["ciso@uprez.com"]
+        
+# =====================================================
+# REGULATORY COMPLIANCE FRAMEWORKS
+# =====================================================
+
+regulatory_compliance:
+  # Sarbanes-Oxley Act (SOX)
+  sox:
+    enabled: true
+    controls:
+      financial_reporting:
+        enabled: true
+        automated_controls: true
+        manual_controls: true
+        
+      it_general_controls:
+        change_management: true
+        access_controls: true
+        data_backup_recovery: true
+        
+      application_controls:
+        input_validation: true
+        processing_controls: true
+        output_controls: true
+        
+    documentation:
+      control_documentation: true
+      testing_documentation: true
+      deficiency_tracking: true
+      
+  # Securities and Exchange Commission (SEC)
+  sec:
+    enabled: true
+    requirements:
+      data_retention: "7 years"
+      audit_trail: "immutable"
+      data_integrity: "checksums"
+      
+    reporting:
+      financial_data_accuracy: true
+      material_weakness_reporting: true
+      
+  # Financial data regulations
+  financial_regulations:
+    # Fair Disclosure Regulation (FD)
+    reg_fd:
+      enabled: true
+      material_information_controls: true
+      simultaneous_disclosure: true
+      
+    # Market data compliance
+    market_data:
+      vendor_compliance: true
+      usage_reporting: true
+      licensing_compliance: true
+      
+# =====================================================
+# SECURITY MONITORING AND INCIDENT RESPONSE
+# =====================================================
+
+security_monitoring:
+  # Security Information and Event Management (SIEM)
+  siem:
+    enabled: true
+    provider: "Google Cloud Security Command Center"
+    
+    # Log sources
+    log_sources:
+      - "application_logs"
+      - "database_logs"
+      - "network_logs"
+      - "authentication_logs"
+      - "api_gateway_logs"
+      
+    # Detection rules
+    detection_rules:
+      brute_force_attack:
+        enabled: true
+        threshold: "5 failed logins in 5 minutes"
+        
+      unusual_access_patterns:
+        enabled: true
+        baseline_period: "30 days"
+        anomaly_threshold: "2 standard deviations"
+        
+      data_exfiltration:
+        enabled: true
+        volume_threshold: "100MB in 1 hour"
+        
+      privilege_escalation:
+        enabled: true
+        monitor_role_changes: true
+        
+  # Incident response
+  incident_response:
+    enabled: true
+    
+    # Response team
+    team:
+      incident_commander: "security@uprez.com"
+      technical_lead: "engineering@uprez.com"
+      communications: "pr@uprez.com"
+      legal_counsel: "legal@uprez.com"
+      
+    # Response procedures
+    procedures:
+      severity_levels:
+        critical:
+          response_time: "15 minutes"
+          escalation: "immediate"
+          
+        high:
+          response_time: "1 hour"
+          escalation: "2 hours"
+          
+        medium:
+          response_time: "4 hours"
+          escalation: "24 hours"
+          
+        low:
+          response_time: "24 hours"
+          escalation: "72 hours"
+          
+    # Communication templates
+    communication:
+      internal_notification: true
+      external_notification: true  # For data breaches
+      regulatory_notification: true  # If required
+      
+# =====================================================
+# VULNERABILITY MANAGEMENT
+# =====================================================
+
+vulnerability_management:
+  # Vulnerability scanning
+  scanning:
+    enabled: true
+    frequency: "weekly"
+    
+    tools:
+      - "Google Cloud Security Scanner"
+      - "OWASP ZAP"
+      - "Snyk" # For dependency scanning
+      
+    scan_targets:
+      - "web_applications"
+      - "apis"
+      - "databases"
+      - "infrastructure"
+      
+  # Patch management
+  patch_management:
+    enabled: true
+    
+    patching_schedule:
+      critical: "within 24 hours"
+      high: "within 1 week"
+      medium: "within 1 month"
+      low: "next maintenance window"
+      
+    testing_requirements:
+      staging_environment: true
+      rollback_plan: true
+      
+  # Penetration testing
+  penetration_testing:
+    enabled: true
+    frequency: "annually"
+    scope: "full_application"
+    third_party: true
+    
+# =====================================================
+# BACKUP AND DISASTER RECOVERY
+# =====================================================
+
+backup_security:
+  # Backup encryption
+  encryption:
+    enabled: true
+    algorithm: "AES-256"
+    key_management: "Google Cloud KMS"
+    
+  # Backup integrity
+  integrity:
+    checksums: true
+    verification_frequency: "daily"
+    restore_testing: "monthly"
+    
+  # Backup access control
+  access_control:
+    role_based: true
+    multi_person_authorization: true
+    audit_all_access: true
+    
+# =====================================================
+# THIRD-PARTY SECURITY
+# =====================================================
+
+third_party_security:
+  # Vendor assessment
+  vendor_assessment:
+    required: true
+    security_questionnaire: true
+    compliance_verification: true
+    
+  # Data processing agreements
+  data_processing_agreements:
+    required: true
+    gdpr_compliant: true
+    ccpa_compliant: true
+    
+  # API security for integrations
+  api_integrations:
+    authentication_required: true
+    rate_limiting: true
+    data_encryption: true
+    audit_logging: true
+    
+# =====================================================
+# SECURITY TRAINING AND AWARENESS
+# =====================================================
+
+security_training:
+  # Employee training
+  employee_training:
+    required: true
+    frequency: "annually"
+    
+    topics:
+      - "data_privacy_fundamentals"
+      - "phishing_awareness"
+      - "password_security"
+      - "incident_reporting"
+      - "gdpr_compliance"
+      
+  # Role-specific training
+  role_specific:
+    developers:
+      - "secure_coding_practices"
+      - "owasp_top_10"
+      - "encryption_implementation"
+      
+    administrators:
+      - "access_management"
+      - "system_hardening"
+      - "incident_response"
+      
+    users:
+      - "data_handling_procedures"
+      - "social_engineering_awareness"
+      - "privacy_controls"
+      
+# =====================================================
+# CONFIGURATION VALIDATION
+# =====================================================
+
+validation:
+  # Security configuration checks
+  configuration_checks:
+    - name: "encryption_enabled"
+      description: "Verify encryption is enabled for all data stores"
+      frequency: "daily"
+      
+    - name: "access_controls"
+      description: "Validate access control configurations"
+      frequency: "weekly"
+      
+    - name: "audit_logging"
+      description: "Ensure audit logging is functioning"
+      frequency: "daily"
+      
+  # Compliance validation
+  compliance_validation:
+    automated_scanning: true
+    compliance_frameworks: ["SOX", "GDPR", "CCPA"]
+    remediation_tracking: true
+    
+# =====================================================
+# CONTACT INFORMATION
+# =====================================================
+
+contacts:
+  data_protection_officer: "dpo@uprez.com"
+  chief_information_security_officer: "ciso@uprez.com"
+  compliance_officer: "compliance@uprez.com"
+  incident_response_team: "security-incidents@uprez.com"
+  privacy_inquiries: "privacy@uprez.com"

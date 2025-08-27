@@ -1,0 +1,228 @@
+# Configuration for IPO Valuation Platform
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: uprez-valuation
+  labels:
+    app.kubernetes.io/name: uprez-valuation
+    app.kubernetes.io/component: config
+data:
+  # Application Configuration
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+  
+  # Database Configuration
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+  DB_NAME: "uprez_valuation"
+  DB_POOL_MIN: "2"
+  DB_POOL_MAX: "10"
+  DB_TIMEOUT: "30000"
+  
+  # Redis Configuration
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  REDIS_TTL: "3600"
+  
+  # API Configuration
+  API_VERSION: "v1"
+  API_RATE_LIMIT: "1000"
+  API_TIMEOUT: "30000"
+  CORS_ORIGINS: "https://uprez-valuation.com,https://admin.uprez-valuation.com"
+  
+  # Monitoring Configuration
+  METRICS_ENABLED: "true"
+  METRICS_PORT: "9090"
+  HEALTH_CHECK_PATH: "/health"
+  
+  # Feature Flags
+  FEATURE_ADVANCED_ANALYTICS: "true"
+  FEATURE_REAL_TIME_UPDATES: "true"
+  FEATURE_EXPORT_REPORTS: "true"
+  
+  # Security Configuration
+  SECURE_HEADERS: "true"
+  CSRF_PROTECTION: "true"
+  XSS_PROTECTION: "true"
+  
+  # File Upload Configuration
+  MAX_FILE_SIZE: "10485760"  # 10MB
+  ALLOWED_FILE_TYPES: "pdf,xlsx,csv"
+  
+  # Email Configuration (non-sensitive)
+  EMAIL_FROM: "noreply@uprez-valuation.com"
+  EMAIL_SUPPORT: "support@uprez-valuation.com"
+  
+---
+# Frontend Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: uprez-valuation
+  labels:
+    app.kubernetes.io/name: uprez-valuation
+    app.kubernetes.io/component: frontend-config
+data:
+  # React App Configuration
+  REACT_APP_API_URL: "/api"
+  REACT_APP_WS_URL: "/ws"
+  REACT_APP_VERSION: "1.0.0"
+  REACT_APP_ENVIRONMENT: "production"
+  
+  # UI Configuration
+  REACT_APP_THEME: "light"
+  REACT_APP_LOCALE: "en-US"
+  REACT_APP_TIMEZONE: "UTC"
+  
+  # Feature Flags
+  REACT_APP_FEATURE_DARK_MODE: "true"
+  REACT_APP_FEATURE_NOTIFICATIONS: "true"
+  REACT_APP_FEATURE_ANALYTICS: "true"
+  
+  # Performance Configuration
+  REACT_APP_CHUNK_SIZE_WARNING: "500000"
+  REACT_APP_LAZY_LOADING: "true"
+  
+---
+# Nginx Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: uprez-valuation
+  labels:
+    app.kubernetes.io/name: uprez-valuation
+    app.kubernetes.io/component: nginx-config
+data:
+  nginx.conf: |
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /var/run/nginx.pid;
+    
+    events {
+        worker_connections 1024;
+        use epoll;
+        multi_accept on;
+    }
+    
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        
+        # Logging
+        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for"';
+        
+        access_log /var/log/nginx/access.log main;
+        
+        # Performance
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        types_hash_max_size 2048;
+        
+        # Security
+        server_tokens off;
+        add_header X-Frame-Options DENY;
+        add_header X-Content-Type-Options nosniff;
+        add_header X-XSS-Protection "1; mode=block";
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        
+        # Compression
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_comp_level 6;
+        gzip_types
+            text/plain
+            text/css
+            text/xml
+            text/javascript
+            application/json
+            application/javascript
+            application/xml+rss
+            application/atom+xml
+            image/svg+xml;
+        
+        # Rate Limiting
+        limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+        limit_req_zone $binary_remote_addr zone=login:10m rate=1r/s;
+        
+        # Upstream servers
+        upstream backend {
+            least_conn;
+            server backend-service:8000 max_fails=3 fail_timeout=30s;
+            keepalive 32;
+        }
+        
+        # Main server block
+        server {
+            listen 80;
+            server_name _;
+            root /usr/share/nginx/html;
+            index index.html;
+            
+            # Security headers
+            add_header X-Frame-Options DENY always;
+            add_header X-Content-Type-Options nosniff always;
+            add_header X-XSS-Protection "1; mode=block" always;
+            add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+            
+            # Health check
+            location /health {
+                access_log off;
+                return 200 "healthy\n";
+                add_header Content-Type text/plain;
+            }
+            
+            # API proxy
+            location /api/ {
+                limit_req zone=api burst=20 nodelay;
+                proxy_pass http://backend/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_connect_timeout 30s;
+                proxy_send_timeout 30s;
+                proxy_read_timeout 30s;
+                proxy_buffering off;
+            }
+            
+            # WebSocket proxy
+            location /ws/ {
+                proxy_pass http://backend;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+            
+            # Static files
+            location / {
+                try_files $uri $uri/ /index.html;
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+            }
+            
+            # Static assets with long cache
+            location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2|woff|ttf)$ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+            }
+            
+            # Security - deny access to hidden files
+            location ~ /\. {
+                deny all;
+                access_log off;
+                log_not_found off;
+            }
+        }
+    }

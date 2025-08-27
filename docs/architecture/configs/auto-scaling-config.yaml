@@ -1,0 +1,452 @@
+# Auto-scaling and Performance Optimization Configuration
+# IPO Valuation Platform - GCP AI/ML Services
+
+# Kubernetes-based Auto-scaling (GKE)
+gke_autoscaling:
+  cluster_config:
+    name: "ipo-valuation-cluster"
+    location: "us-central1"
+    initial_node_count: 3
+    node_config:
+      machine_type: "n1-standard-4"
+      disk_size_gb: 100
+      preemptible: false
+      
+  node_pools:
+    # ML Model Serving Pool
+    ml_serving_pool:
+      name: "ml-serving-pool"
+      initial_node_count: 2
+      node_config:
+        machine_type: "n1-highmem-4"
+        accelerator_type: "nvidia-tesla-t4"
+        accelerator_count: 1
+        disk_size_gb: 200
+      autoscaling:
+        enabled: true
+        min_node_count: 1
+        max_node_count: 10
+        
+    # Data Processing Pool
+    data_processing_pool:
+      name: "data-processing-pool"
+      initial_node_count: 2
+      node_config:
+        machine_type: "n1-standard-8"
+        disk_size_gb: 500
+        preemptible: true  # Cost optimization
+      autoscaling:
+        enabled: true
+        min_node_count: 0
+        max_node_count: 20
+        
+    # Document Processing Pool
+    document_processing_pool:
+      name: "document-ai-pool"
+      initial_node_count: 1
+      node_config:
+        machine_type: "n1-standard-4"
+        disk_size_gb: 100
+      autoscaling:
+        enabled: true
+        min_node_count: 1
+        max_node_count: 8
+
+# Horizontal Pod Autoscaler (HPA) Configuration
+hpa_configs:
+  # DCF Prediction Service
+  dcf_prediction_hpa:
+    apiVersion: "autoscaling/v2"
+    kind: "HorizontalPodAutoscaler"
+    metadata:
+      name: "dcf-prediction-hpa"
+    spec:
+      scaleTargetRef:
+        apiVersion: "apps/v1"
+        kind: "Deployment"
+        name: "dcf-prediction-service"
+      minReplicas: 2
+      maxReplicas: 20
+      metrics:
+        - type: "Resource"
+          resource:
+            name: "cpu"
+            target:
+              type: "Utilization"
+              averageUtilization: 70
+        - type: "Resource"
+          resource:
+            name: "memory"
+            target:
+              type: "Utilization"
+              averageUtilization: 80
+        - type: "Pods"
+          pods:
+            metric:
+              name: "requests_per_second"
+            target:
+              type: "AverageValue"
+              averageValue: "50"
+              
+  # Risk Assessment Service
+  risk_assessment_hpa:
+    apiVersion: "autoscaling/v2"
+    kind: "HorizontalPodAutoscaler"
+    metadata:
+      name: "risk-assessment-hpa"
+    spec:
+      scaleTargetRef:
+        apiVersion: "apps/v1"
+        kind: "Deployment"
+        name: "risk-assessment-service"
+      minReplicas: 2
+      maxReplicas: 15
+      metrics:
+        - type: "Resource"
+          resource:
+            name: "cpu"
+            target:
+              type: "Utilization"
+              averageUtilization: 75
+        - type: "Custom"
+          custom:
+            metric:
+              name: "inference_latency_p95"
+            target:
+              type: "AverageValue"
+              averageValue: "500m"  # 500ms
+              
+  # Document Processing Service
+  document_ai_hpa:
+    apiVersion: "autoscaling/v2"
+    kind: "HorizontalPodAutoscaler"
+    metadata:
+      name: "document-ai-hpa"
+    spec:
+      scaleTargetRef:
+        apiVersion: "apps/v1"
+        kind: "Deployment"
+        name: "document-processing-service"
+      minReplicas: 1
+      maxReplicas: 10
+      metrics:
+        - type: "Resource"
+          resource:
+            name: "cpu"
+            target:
+              type: "Utilization"
+              averageUtilization: 60
+        - type: "External"
+          external:
+            metric:
+              name: "pubsub.googleapis.com|subscription|num_undelivered_messages"
+              selector:
+                matchLabels:
+                  resource.labels.subscription_id: "document-processing-queue"
+            target:
+              type: "AverageValue"
+              averageValue: "10"
+
+# Vertical Pod Autoscaler (VPA) Configuration
+vpa_configs:
+  # ML Model Services VPA
+  ml_services_vpa:
+    apiVersion: "autoscaling.k8s.io/v1"
+    kind: "VerticalPodAutoscaler"
+    metadata:
+      name: "ml-services-vpa"
+    spec:
+      targetRef:
+        apiVersion: "apps/v1"
+        kind: "Deployment"
+        name: "ml-services"
+      updatePolicy:
+        updateMode: "Auto"
+      resourcePolicy:
+        containerPolicies:
+          - containerName: "ml-inference"
+            minAllowed:
+              cpu: "100m"
+              memory: "512Mi"
+            maxAllowed:
+              cpu: "4"
+              memory: "16Gi"
+            controlledResources:
+              - "cpu"
+              - "memory"
+
+# Cloud Run Auto-scaling
+cloud_run_scaling:
+  ml_inference_service:
+    name: "ml-inference-service"
+    region: "us-central1"
+    scaling:
+      min_instances: 1
+      max_instances: 100
+      concurrency: 80
+      cpu_throttling: false
+      execution_environment: "gen2"
+    resources:
+      cpu: "2"
+      memory: "4Gi"
+      
+  document_processor:
+    name: "document-processor-service"
+    region: "us-central1"
+    scaling:
+      min_instances: 0
+      max_instances: 50
+      concurrency: 10  # Document processing is CPU intensive
+      timeout: "900s"  # 15 minutes
+    resources:
+      cpu: "4"
+      memory: "8Gi"
+
+# Vertex AI Endpoint Auto-scaling
+vertex_ai_scaling:
+  dcf_prediction_endpoint:
+    endpoint_name: "dcf-prediction-endpoint"
+    deployed_model_config:
+      min_replica_count: 1
+      max_replica_count: 10
+      machine_type: "n1-standard-4"
+      accelerator_type: "NVIDIA_TESLA_T4"
+      accelerator_count: 1
+    auto_scaling:
+      metric_specs:
+        - metric_name: "aiplatform.googleapis.com/prediction/online/cpu/utilization"
+          target: 0.7
+        - metric_name: "aiplatform.googleapis.com/prediction/online/accelerator/duty_cycle"
+          target: 0.8
+          
+  risk_assessment_endpoint:
+    endpoint_name: "risk-assessment-endpoint"
+    deployed_model_config:
+      min_replica_count: 1
+      max_replica_count: 8
+      machine_type: "n1-highmem-2"
+    auto_scaling:
+      metric_specs:
+        - metric_name: "aiplatform.googleapis.com/prediction/online/cpu/utilization"
+          target: 0.75
+        - metric_name: "aiplatform.googleapis.com/prediction/online/prediction/count"
+          target: 100  # predictions per minute
+
+# BigQuery Auto-scaling and Optimization
+bigquery_optimization:
+  query_optimization:
+    use_legacy_sql: false
+    use_query_cache: true
+    use_standard_sql: true
+    maximum_bytes_billed: 1000000000000  # 1TB limit
+    
+  ml_model_optimization:
+    auto_ml_tables:
+      optimization_objective: "MINIMIZE_QUANTILE_LOSS"
+      budget_milli_node_hours: 1000
+      
+  job_scheduling:
+    concurrent_queries: 100
+    query_queue_timeout: "6h"
+    
+  slot_reservations:
+    baseline_slots: 500
+    commitment_plan: "FLEX"
+    autoscaling:
+      enabled: true
+      max_slots: 2000
+
+# Cloud Dataflow Auto-scaling
+dataflow_autoscaling:
+  streaming_pipeline:
+    job_name: "ipo-market-data-streaming"
+    region: "us-central1"
+    autoscaling:
+      algorithm: "THROUGHPUT_BASED"
+      max_num_workers: 50
+      num_workers: 5
+      worker_machine_type: "n1-standard-2"
+      worker_disk_type: "pd-ssd"
+      worker_disk_size_gb: 100
+      
+  batch_pipeline:
+    job_name: "ipo-data-processing-batch"
+    region: "us-central1"
+    autoscaling:
+      algorithm: "NONE"  # Fixed scaling for batch jobs
+      max_num_workers: 20
+      num_workers: 10
+      use_public_ips: false
+      network: "ipo-valuation-vpc"
+      subnetwork: "dataflow-subnet"
+
+# Load Balancer Configuration
+load_balancing:
+  global_load_balancer:
+    name: "ipo-valuation-lb"
+    type: "EXTERNAL"
+    protocol: "HTTPS"
+    
+    backend_services:
+      ml_inference:
+        name: "ml-inference-backend"
+        protocol: "HTTP"
+        timeout_sec: 30
+        health_check:
+          check_interval_sec: 10
+          timeout_sec: 5
+          healthy_threshold: 2
+          unhealthy_threshold: 3
+          request_path: "/health"
+        load_balancing_scheme: "EXTERNAL"
+        session_affinity: "NONE"
+        
+      document_processing:
+        name: "document-processing-backend"
+        protocol: "HTTP"
+        timeout_sec: 900  # 15 minutes for document processing
+        health_check:
+          check_interval_sec: 30
+          timeout_sec: 10
+        load_balancing_scheme: "EXTERNAL"
+        
+    cdn_config:
+      enabled: true
+      cache_mode: "CACHE_ALL_STATIC"
+      default_ttl: 3600
+      max_ttl: 86400
+      client_ttl: 3600
+
+# Performance Optimization Settings
+performance_optimization:
+  caching:
+    redis_cluster:
+      name: "ipo-valuation-cache"
+      memory_size_gb: 16
+      redis_version: "REDIS_6_X"
+      auth_enabled: true
+      transit_encryption_mode: "SERVER_AUTHENTICATION"
+      tier: "STANDARD_HA"
+      replica_count: 2
+      
+    cache_policies:
+      model_predictions:
+        ttl: "300s"  # 5 minutes
+        key_pattern: "prediction:{model_type}:{hash}"
+        
+      document_analysis:
+        ttl: "3600s"  # 1 hour
+        key_pattern: "document:{document_hash}"
+        
+      market_data:
+        ttl: "60s"  # 1 minute
+        key_pattern: "market:{symbol}:{timestamp}"
+        
+  connection_pooling:
+    bigquery:
+      max_connections: 50
+      idle_timeout: "300s"
+      
+    cloud_sql:
+      max_connections: 100
+      max_idle_connections: 20
+      max_lifetime: "3600s"
+      
+  compression:
+    response_compression: true
+    compression_types: ["gzip", "br"]
+    compression_level: 6
+    
+  request_optimization:
+    batch_processing:
+      enabled: true
+      batch_size: 10
+      batch_timeout: "100ms"
+      
+    request_coalescing:
+      enabled: true
+      coalescing_window: "50ms"
+
+# Cost Optimization Features
+cost_optimization:
+  preemptible_instances:
+    enabled: true
+    percentage: 70  # 70% of non-critical workloads
+    node_pools: ["data-processing-pool"]
+    
+  spot_instances:
+    enabled: true
+    instance_types: ["n1-standard-4", "n1-standard-8"]
+    
+  scheduled_scaling:
+    business_hours:
+      timezone: "America/New_York"
+      weekday_schedule:
+        scale_up_time: "08:00"
+        scale_down_time: "18:00"
+        scale_up_replicas: 5
+        scale_down_replicas: 2
+      weekend_schedule:
+        scale_up_replicas: 1
+        scale_down_replicas: 1
+        
+  resource_rightsizing:
+    enabled: true
+    analysis_window: "7d"
+    cpu_utilization_threshold: 0.5
+    memory_utilization_threshold: 0.6
+    
+  storage_optimization:
+    lifecycle_policies:
+      processed_documents:
+        transition_to_nearline: "30d"
+        transition_to_coldline: "90d"
+        deletion: "2555d"  # 7 years
+        
+      model_artifacts:
+        transition_to_nearline: "7d"
+        transition_to_coldline: "30d"
+        
+      logs:
+        deletion: "90d"
+
+# Monitoring and Alerting for Scaling Events
+scaling_monitoring:
+  metrics:
+    - name: "kubernetes.io/container/cpu/core_usage_time"
+      threshold: 0.8
+      
+    - name: "kubernetes.io/container/memory/used_bytes"
+      threshold: 0.85
+      
+    - name: "custom.googleapis.com/ipo_valuation/request_latency"
+      threshold: 1000  # 1 second
+      
+    - name: "custom.googleapis.com/ipo_valuation/prediction_queue_depth"
+      threshold: 100
+      
+  alerts:
+    scaling_events:
+      - name: "High CPU Usage"
+        condition: "cpu_utilization > 0.8 for 5m"
+        severity: "WARNING"
+        
+      - name: "Memory Pressure"
+        condition: "memory_utilization > 0.9 for 3m"
+        severity: "CRITICAL"
+        
+      - name: "Request Latency High"
+        condition: "p95_latency > 2000ms for 5m"
+        severity: "WARNING"
+        
+      - name: "Scaling Failure"
+        condition: "hpa_scaling_error = true"
+        severity: "CRITICAL"
+        
+  dashboards:
+    - name: "Auto-scaling Dashboard"
+      widgets:
+        - "HPA Status"
+        - "Node Pool Utilization"
+        - "Request Latency Trends"
+        - "Cost Optimization Metrics"

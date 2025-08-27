@@ -1,0 +1,1767 @@
+openapi: 3.0.3
+info:
+  title: UpRez IPO Valuation Platform API
+  description: |
+    Comprehensive API for the UpRez IPO Valuation Platform providing automated valuation analysis, 
+    document processing, market data integration, and reporting capabilities.
+    
+    ## Features
+    - Automated IPO valuation calculations
+    - Document upload and processing (prospectus, financial statements)
+    - Real-time ASX market data integration
+    - Peer group analysis and benchmarking
+    - Risk assessment and scenario modeling
+    - Comprehensive PDF report generation
+    
+    ## Authentication
+    This API uses OAuth 2.0 with JWT tokens. All endpoints require authentication unless otherwise specified.
+    
+    ## Rate Limiting
+    - Basic Tier: 100 requests/hour
+    - Professional Tier: 500 requests/hour  
+    - Enterprise Tier: 2000 requests/hour
+    
+  version: 1.0.0
+  contact:
+    name: UpRez API Support
+    url: https://uprez.com/support
+    email: api-support@uprez.com
+  license:
+    name: Proprietary
+    url: https://uprez.com/terms
+  termsOfService: https://uprez.com/terms
+
+servers:
+  - url: https://api.uprez.com/v1
+    description: Production server
+  - url: https://api-staging.uprez.com/v1
+    description: Staging server
+  - url: https://localhost:8000/v1
+    description: Local development server
+
+security:
+  - OAuth2: []
+  - ApiKeyAuth: []
+  - BearerAuth: []
+
+tags:
+  - name: Valuations
+    description: Core valuation operations and lifecycle management
+  - name: Documents
+    description: Document upload, processing, and extraction
+  - name: Market Data
+    description: Real-time and historical market data access
+  - name: Companies
+    description: Company information and financial data
+  - name: Reports
+    description: Report generation and retrieval
+  - name: Analytics
+    description: Advanced analytics and insights
+  - name: Users
+    description: User management and preferences
+  - name: Subscriptions
+    description: Subscription management and billing
+  - name: Webhooks
+    description: Webhook configuration and management
+
+paths:
+  /valuations:
+    post:
+      tags:
+        - Valuations
+      summary: Create new valuation request
+      description: |
+        Creates a new IPO valuation request with company information and analysis parameters.
+        The valuation process is asynchronous and typically takes 8-15 minutes to complete.
+      operationId: createValuation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValuationRequest'
+            examples:
+              tech_company:
+                summary: Technology company valuation
+                value:
+                  company_name: "TechCorp Pty Ltd"
+                  abn: "12345678901"
+                  industry_sector: "Software & Services"
+                  expected_ipo_date: "2024-06-01"
+                  expected_offer_price_range: {
+                    "min": 2.50,
+                    "max": 3.50
+                  }
+                  shares_on_issue: 50000000
+                  analysis_type: "comprehensive"
+                  include_peer_analysis: true
+                  risk_assessment_level: "detailed"
+              mining_company:
+                summary: Mining company valuation
+                value:
+                  company_name: "AusMining Ltd"
+                  abn: "98765432109"
+                  industry_sector: "Materials"
+                  expected_ipo_date: "2024-08-15"
+                  expected_offer_price_range: {
+                    "min": 1.20,
+                    "max": 1.80
+                  }
+                  shares_on_issue: 100000000
+                  analysis_type: "comprehensive"
+                  include_peer_analysis: true
+                  commodity_exposure: ["Gold", "Copper"]
+      responses:
+        '201':
+          description: Valuation request created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValuationResponse'
+              example:
+                job_id: "val_7k8m9n0p1q2r3s4t5u6v7w8x"
+                status: "queued"
+                estimated_completion_time: "12 minutes"
+                created_at: "2024-01-15T10:30:00Z"
+                polling_url: "/v1/valuations/val_7k8m9n0p1q2r3s4t5u6v7w8x/status"
+                webhook_url: "/v1/webhooks/valuations/completed"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+      security:
+        - OAuth2: [write:valuations]
+        - BearerAuth: []
+
+    get:
+      tags:
+        - Valuations
+      summary: List user valuations
+      description: Retrieve a paginated list of valuations for the authenticated user
+      operationId: listValuations
+      parameters:
+        - name: page
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: status
+          in: query
+          description: Filter by valuation status
+          required: false
+          schema:
+            type: string
+            enum: [queued, processing, completed, failed, cancelled]
+        - name: company_name
+          in: query
+          description: Filter by company name (partial match)
+          required: false
+          schema:
+            type: string
+        - name: date_from
+          in: query
+          description: Filter valuations created after this date
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          description: Filter valuations created before this date
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: List of valuations retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValuationList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /valuations/{job_id}/status:
+    get:
+      tags:
+        - Valuations
+      summary: Get valuation status
+      description: |
+        Retrieve the current status and progress of a valuation job.
+        Use this endpoint to poll for completion status.
+      operationId: getValuationStatus
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: Unique identifier for the valuation job
+          schema:
+            type: string
+            pattern: '^val_[a-z0-9]{24}$'
+          example: "val_7k8m9n0p1q2r3s4t5u6v7w8x"
+      responses:
+        '200':
+          description: Valuation status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValuationStatus'
+              examples:
+                processing:
+                  summary: Valuation in progress
+                  value:
+                    job_id: "val_7k8m9n0p1q2r3s4t5u6v7w8x"
+                    status: "processing"
+                    progress_percentage: 65
+                    current_stage: "peer_analysis"
+                    stage_description: "Analyzing peer group companies and market multiples"
+                    estimated_completion: "2024-01-15T10:42:00Z"
+                    started_at: "2024-01-15T10:30:00Z"
+                    processing_stages: [
+                      {
+                        "stage": "document_processing",
+                        "status": "completed",
+                        "completed_at": "2024-01-15T10:33:00Z"
+                      },
+                      {
+                        "stage": "market_data_collection",
+                        "status": "completed", 
+                        "completed_at": "2024-01-15T10:36:00Z"
+                      },
+                      {
+                        "stage": "peer_analysis",
+                        "status": "processing",
+                        "progress": 65
+                      }
+                    ]
+                completed:
+                  summary: Valuation completed
+                  value:
+                    job_id: "val_7k8m9n0p1q2r3s4t5u6v7w8x"
+                    status: "completed"
+                    progress_percentage: 100
+                    current_stage: "completed"
+                    completed_at: "2024-01-15T10:43:00Z"
+                    result_url: "/v1/valuations/val_7k8m9n0p1q2r3s4t5u6v7w8x/result"
+                    report_url: "/v1/reports/val_7k8m9n0p1q2r3s4t5u6v7w8x"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /valuations/{job_id}/result:
+    get:
+      tags:
+        - Valuations
+      summary: Get valuation results
+      description: |
+        Retrieve the complete valuation results including analysis, calculations, and insights.
+        Only available when valuation status is 'completed'.
+      operationId: getValuationResult
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: Unique identifier for the valuation job
+          schema:
+            type: string
+            pattern: '^val_[a-z0-9]{24}$'
+        - name: format
+          in: query
+          description: Response format
+          required: false
+          schema:
+            type: string
+            enum: [json, pdf]
+            default: json
+        - name: include_raw_data
+          in: query
+          description: Include raw data used in calculations
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Valuation results retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValuationResult'
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+              example: "PDF binary content"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '410':
+          description: Valuation results have expired and are no longer available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "results_expired"
+                message: "Valuation results are no longer available. Results are retained for 90 days."
+                code: 410
+
+  /documents/upload:
+    post:
+      tags:
+        - Documents
+      summary: Upload document for processing
+      description: |
+        Upload a document (prospectus, financial statements, etc.) for automated processing and data extraction.
+        Supported formats: PDF, DOC, DOCX, XLS, XLSX
+      operationId: uploadDocument
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Document file to upload
+                document_type:
+                  type: string
+                  enum: [prospectus, financial_statements, annual_report, offering_memorandum, company_profile, other]
+                  description: Type of document being uploaded
+                valuation_job_id:
+                  type: string
+                  description: Associated valuation job ID (optional)
+                  pattern: '^val_[a-z0-9]{24}$'
+                processing_options:
+                  type: object
+                  description: Document processing configuration
+                  properties:
+                    extract_financial_data:
+                      type: boolean
+                      default: true
+                    extract_risk_factors:
+                      type: boolean
+                      default: true
+                    extract_business_description:
+                      type: boolean
+                      default: true
+                    ocr_enabled:
+                      type: boolean
+                      default: true
+              required:
+                - file
+                - document_type
+            encoding:
+              file:
+                contentType: application/pdf, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      responses:
+        '201':
+          description: Document uploaded and processing started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentUploadResponse'
+              example:
+                job_id: "doc_9z8y7x6w5v4u3t2s1r0q9p8o"
+                status: "processing"
+                file_url: "https://storage.uprez.com/documents/doc_9z8y7x6w5v4u3t2s1r0q9p8o.pdf"
+                document_type: "prospectus"
+                estimated_completion_time: "3 minutes"
+                created_at: "2024-01-15T10:45:00Z"
+                polling_url: "/v1/documents/doc_9z8y7x6w5v4u3t2s1r0q9p8o/status"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          description: File size too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "file_too_large"
+                message: "File size exceeds maximum limit of 50MB"
+                code: 413
+        '415':
+          description: Unsupported file format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "unsupported_format"
+                message: "File format not supported. Please use PDF, DOC, DOCX, XLS, or XLSX"
+                code: 415
+
+  /documents/{job_id}/extraction:
+    get:
+      tags:
+        - Documents
+      summary: Get document extraction results
+      description: Retrieve extracted and structured data from processed document
+      operationId: getDocumentExtraction
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: Document processing job ID
+          schema:
+            type: string
+            pattern: '^doc_[a-z0-9]{24}$'
+      responses:
+        '200':
+          description: Document extraction results retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtractionResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '202':
+          description: Document still processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingStatus'
+
+  /market-data/companies/{ticker}:
+    get:
+      tags:
+        - Market Data
+      summary: Get company market data
+      description: Retrieve current market data for a specific ASX-listed company
+      operationId: getCompanyMarketData
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          description: ASX ticker symbol
+          schema:
+            type: string
+            pattern: '^[A-Z]{3,4}$'
+          example: "CBA"
+        - name: include_historical
+          in: query
+          description: Include historical data
+          schema:
+            type: boolean
+            default: false
+        - name: historical_period
+          in: query
+          description: Historical data period (requires include_historical=true)
+          schema:
+            type: string
+            enum: [1M, 3M, 6M, 1Y, 2Y, 5Y]
+            default: 1Y
+      responses:
+        '200':
+          description: Market data retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketData'
+        '404':
+          description: Company not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "company_not_found"
+                message: "No company found with ticker 'XYZ'"
+                code: 404
+
+  /market-data/peer-groups:
+    post:
+      tags:
+        - Market Data
+      summary: Find peer group companies
+      description: Identify and retrieve market data for peer group companies based on criteria
+      operationId: findPeerGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PeerGroupRequest'
+            example:
+              industry_sector: "Software & Services"
+              market_cap_range: {
+                "min": 50000000,
+                "max": 500000000
+              }
+              exclude_tickers: ["XYZ"]
+              max_peers: 10
+              exchange: "ASX"
+      responses:
+        '200':
+          description: Peer group analysis completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PeerGroupData'
+
+  /reports/{job_id}:
+    get:
+      tags:
+        - Reports
+      summary: Generate valuation report
+      description: Generate and retrieve a comprehensive valuation report in PDF format
+      operationId: getValuationReport
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: Valuation job ID
+          schema:
+            type: string
+            pattern: '^val_[a-z0-9]{24}$'
+        - name: template
+          in: query
+          description: Report template to use
+          schema:
+            type: string
+            enum: [executive, detailed, technical, pitch_deck]
+            default: executive
+        - name: include_sections
+          in: query
+          description: Specific sections to include (comma-separated)
+          schema:
+            type: string
+          example: "executive_summary,valuation_analysis,risk_assessment"
+      responses:
+        '200':
+          description: Report generated successfully
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              description: Suggested filename for download
+              schema:
+                type: string
+              example: 'attachment; filename="TechCorp_IPO_Valuation_Report.pdf"'
+            X-Report-Generated-At:
+              description: Timestamp when report was generated
+              schema:
+                type: string
+                format: date-time
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /analytics/industry-benchmarks:
+    get:
+      tags:
+        - Analytics
+      summary: Get industry benchmarks
+      description: Retrieve industry benchmarking data and metrics
+      operationId: getIndustryBenchmarks
+      parameters:
+        - name: industry_sector
+          in: query
+          required: true
+          description: Industry sector for benchmarking
+          schema:
+            type: string
+        - name: metric_types
+          in: query
+          description: Types of metrics to include
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [valuation_multiples, growth_rates, profitability, liquidity]
+          style: form
+          explode: false
+        - name: time_period
+          in: query
+          description: Time period for analysis
+          schema:
+            type: string
+            enum: [current, 1Y, 2Y, 3Y, 5Y]
+            default: current
+      responses:
+        '200':
+          description: Industry benchmarks retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndustryBenchmarks'
+
+  /users/profile:
+    get:
+      tags:
+        - Users
+      summary: Get user profile
+      description: Retrieve authenticated user's profile information
+      operationId: getUserProfile
+      responses:
+        '200':
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    patch:
+      tags:
+        - Users
+      summary: Update user profile
+      description: Update user profile information and preferences
+      operationId: updateUserProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfileUpdate'
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /webhooks:
+    post:
+      tags:
+        - Webhooks
+      summary: Create webhook
+      description: Create a new webhook for receiving event notifications
+      operationId: createWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookRequest'
+      responses:
+        '201':
+          description: Webhook created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+
+    get:
+      tags:
+        - Webhooks
+      summary: List webhooks
+      description: List all webhooks for the authenticated user
+      operationId: listWebhooks
+      responses:
+        '200':
+          description: Webhooks retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhooks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Webhook'
+
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health check
+      description: Check API health and status
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+                  timestamp:
+                    type: string
+                    format: date-time
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  services:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        example: "healthy"
+                      cache:
+                        type: string
+                        example: "healthy"
+                      external_apis:
+                        type: object
+                        properties:
+                          asx_data:
+                            type: string
+                            example: "healthy"
+                          asic_registry:
+                            type: string
+                            example: "healthy"
+
+components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authentication with PKCE
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.uprez.com/oauth/authorize
+          tokenUrl: https://auth.uprez.com/oauth/token
+          refreshUrl: https://auth.uprez.com/oauth/refresh
+          scopes:
+            read:valuations: Read access to valuations
+            write:valuations: Create and modify valuations
+            read:documents: Read access to documents
+            write:documents: Upload and process documents
+            read:market_data: Access to market data
+            read:analytics: Access to analytics and insights
+            write:profile: Update user profile
+            admin: Administrative access
+
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token authentication
+
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for programmatic access
+
+  schemas:
+    ValuationRequest:
+      type: object
+      required:
+        - company_name
+        - industry_sector
+        - expected_ipo_date
+        - shares_on_issue
+      properties:
+        company_name:
+          type: string
+          description: Official company name
+          maxLength: 200
+          example: "TechCorp Pty Ltd"
+        abn:
+          type: string
+          description: Australian Business Number
+          pattern: '^\d{11}$'
+          example: "12345678901"
+        industry_sector:
+          type: string
+          description: Primary industry sector
+          enum: 
+            - "Technology"
+            - "Software & Services"
+            - "Healthcare"
+            - "Biotech"
+            - "Financial Services"
+            - "Materials"
+            - "Energy"
+            - "Consumer Discretionary"
+            - "Consumer Staples"
+            - "Industrials"
+            - "Real Estate"
+            - "Utilities"
+            - "Telecommunications"
+          example: "Software & Services"
+        expected_ipo_date:
+          type: string
+          format: date
+          description: Expected IPO listing date
+          example: "2024-06-01"
+        expected_offer_price_range:
+          type: object
+          description: Expected price range per share
+          properties:
+            min:
+              type: number
+              format: float
+              minimum: 0.01
+              example: 2.50
+            max:
+              type: number
+              format: float
+              minimum: 0.01
+              example: 3.50
+        shares_on_issue:
+          type: integer
+          description: Number of shares to be issued
+          minimum: 1
+          example: 50000000
+        analysis_type:
+          type: string
+          description: Type of analysis to perform
+          enum: [basic, comprehensive, premium]
+          default: comprehensive
+        include_peer_analysis:
+          type: boolean
+          description: Include peer group comparison
+          default: true
+        risk_assessment_level:
+          type: string
+          enum: [basic, detailed, comprehensive]
+          default: detailed
+        document_ids:
+          type: array
+          description: Associated document job IDs
+          items:
+            type: string
+            pattern: '^doc_[a-z0-9]{24}$'
+        custom_parameters:
+          type: object
+          description: Custom analysis parameters
+          additionalProperties: true
+
+    ValuationResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          description: Unique valuation job identifier
+          pattern: '^val_[a-z0-9]{24}$'
+          example: "val_7k8m9n0p1q2r3s4t5u6v7w8x"
+        status:
+          type: string
+          enum: [queued, processing, completed, failed, cancelled]
+          example: "queued"
+        estimated_completion_time:
+          type: string
+          description: Estimated completion time
+          example: "12 minutes"
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+        polling_url:
+          type: string
+          description: URL to check status
+          example: "/v1/valuations/val_7k8m9n0p1q2r3s4t5u6v7w8x/status"
+        webhook_url:
+          type: string
+          description: Webhook URL for completion notification
+          example: "/v1/webhooks/valuations/completed"
+
+    ValuationStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+          pattern: '^val_[a-z0-9]{24}$'
+        status:
+          type: string
+          enum: [queued, processing, completed, failed, cancelled]
+        progress_percentage:
+          type: integer
+          minimum: 0
+          maximum: 100
+        current_stage:
+          type: string
+          enum: 
+            - "queued"
+            - "document_processing"
+            - "market_data_collection"
+            - "peer_analysis"
+            - "financial_modeling"
+            - "risk_assessment"
+            - "valuation_calculation"
+            - "report_generation"
+            - "completed"
+            - "failed"
+        stage_description:
+          type: string
+          description: Human-readable description of current stage
+        estimated_completion:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        result_url:
+          type: string
+          description: URL to retrieve results (only when completed)
+        report_url:
+          type: string
+          description: URL to generate report (only when completed)
+        error_details:
+          type: object
+          description: Error information (only when failed)
+          properties:
+            error_code:
+              type: string
+            error_message:
+              type: string
+            retry_possible:
+              type: boolean
+        processing_stages:
+          type: array
+          items:
+            type: object
+            properties:
+              stage:
+                type: string
+              status:
+                type: string
+                enum: [pending, processing, completed, failed]
+              progress:
+                type: integer
+                minimum: 0
+                maximum: 100
+              started_at:
+                type: string
+                format: date-time
+              completed_at:
+                type: string
+                format: date-time
+
+    ValuationResult:
+      type: object
+      properties:
+        job_id:
+          type: string
+          pattern: '^val_[a-z0-9]{24}$'
+        company_name:
+          type: string
+        valuation_summary:
+          type: object
+          properties:
+            target_price:
+              type: number
+              format: float
+              description: Calculated target price per share
+            price_range:
+              type: object
+              properties:
+                low:
+                  type: number
+                  format: float
+                high:
+                  type: number
+                  format: float
+                mid:
+                  type: number
+                  format: float
+            market_capitalization:
+              type: number
+              format: float
+              description: Implied market capitalization
+            valuation_method:
+              type: string
+              enum: [dcf, multiples, asset_based, sum_of_parts]
+            confidence_score:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 1
+              description: Confidence in valuation accuracy (0-1)
+        peer_analysis:
+          type: object
+          properties:
+            peer_companies:
+              type: array
+              items:
+                type: object
+                properties:
+                  ticker:
+                    type: string
+                  company_name:
+                    type: string
+                  market_cap:
+                    type: number
+                    format: float
+                  pe_ratio:
+                    type: number
+                    format: float
+                  ev_ebitda:
+                    type: number
+                    format: float
+            industry_multiples:
+              type: object
+              properties:
+                median_pe:
+                  type: number
+                  format: float
+                median_ev_ebitda:
+                  type: number
+                  format: float
+                median_price_sales:
+                  type: number
+                  format: float
+        risk_assessment:
+          type: object
+          properties:
+            overall_risk_score:
+              type: number
+              format: float
+              minimum: 1
+              maximum: 10
+            risk_factors:
+              type: array
+              items:
+                type: object
+                properties:
+                  category:
+                    type: string
+                    enum: [market, financial, operational, regulatory, management]
+                  severity:
+                    type: string
+                    enum: [low, medium, high, critical]
+                  description:
+                    type: string
+                  impact_on_valuation:
+                    type: string
+                    enum: [minimal, moderate, significant, severe]
+        scenario_analysis:
+          type: object
+          properties:
+            base_case:
+              type: object
+              properties:
+                price:
+                  type: number
+                  format: float
+                probability:
+                  type: number
+                  format: float
+            bull_case:
+              type: object
+              properties:
+                price:
+                  type: number
+                  format: float
+                probability:
+                  type: number
+                  format: float
+            bear_case:
+              type: object
+              properties:
+                price:
+                  type: number
+                  format: float
+                probability:
+                  type: number
+                  format: float
+        financial_metrics:
+          type: object
+          properties:
+            revenue_growth:
+              type: number
+              format: float
+              description: Expected annual revenue growth rate
+            ebitda_margin:
+              type: number
+              format: float
+              description: EBITDA margin percentage
+            roe:
+              type: number
+              format: float
+              description: Return on equity
+            debt_to_equity:
+              type: number
+              format: float
+              description: Debt to equity ratio
+        market_data:
+          type: object
+          properties:
+            collection_timestamp:
+              type: string
+              format: date-time
+            asx_index_level:
+              type: number
+              format: float
+            sector_performance:
+              type: number
+              format: float
+              description: Sector performance percentage
+        methodology:
+          type: object
+          properties:
+            primary_method:
+              type: string
+            weighting:
+              type: object
+              description: Method weightings used
+              additionalProperties:
+                type: number
+                format: float
+            assumptions:
+              type: array
+              items:
+                type: string
+        generated_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          description: When results expire and are no longer accessible
+
+    ValuationList:
+      type: object
+      properties:
+        valuations:
+          type: array
+          items:
+            type: object
+            properties:
+              job_id:
+                type: string
+                pattern: '^val_[a-z0-9]{24}$'
+              company_name:
+                type: string
+              status:
+                type: string
+                enum: [queued, processing, completed, failed, cancelled]
+              created_at:
+                type: string
+                format: date-time
+              completed_at:
+                type: string
+                format: date-time
+              target_price:
+                type: number
+                format: float
+                description: Only present when completed
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total_pages:
+              type: integer
+            total_items:
+              type: integer
+            has_next:
+              type: boolean
+            has_previous:
+              type: boolean
+
+    DocumentUploadResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          pattern: '^doc_[a-z0-9]{24}$'
+        status:
+          type: string
+          enum: [processing, completed, failed]
+        file_url:
+          type: string
+          format: uri
+        document_type:
+          type: string
+        estimated_completion_time:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        polling_url:
+          type: string
+
+    ExtractionResult:
+      type: object
+      properties:
+        job_id:
+          type: string
+          pattern: '^doc_[a-z0-9]{24}$'
+        document_type:
+          type: string
+        extracted_data:
+          type: object
+          description: Structured data extracted from document
+          additionalProperties: true
+        confidence_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        validation_errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              error:
+                type: string
+              severity:
+                type: string
+                enum: [warning, error, critical]
+        processing_details:
+          type: object
+          properties:
+            pages_processed:
+              type: integer
+            ocr_applied:
+              type: boolean
+            processing_time:
+              type: number
+              format: float
+              description: Processing time in seconds
+
+    MarketData:
+      type: object
+      properties:
+        ticker:
+          type: string
+        company_name:
+          type: string
+        current_price:
+          type: number
+          format: float
+        market_cap:
+          type: number
+          format: float
+        shares_outstanding:
+          type: integer
+        volume:
+          type: integer
+        pe_ratio:
+          type: number
+          format: float
+        ev_ebitda:
+          type: number
+          format: float
+        dividend_yield:
+          type: number
+          format: float
+        price_change_1d:
+          type: number
+          format: float
+        price_change_1m:
+          type: number
+          format: float
+        price_change_1y:
+          type: number
+          format: float
+        week_52_high:
+          type: number
+          format: float
+        week_52_low:
+          type: number
+          format: float
+        last_updated:
+          type: string
+          format: date-time
+        historical_data:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              open:
+                type: number
+                format: float
+              high:
+                type: number
+                format: float
+              low:
+                type: number
+                format: float
+              close:
+                type: number
+                format: float
+              volume:
+                type: integer
+
+    PeerGroupRequest:
+      type: object
+      required:
+        - industry_sector
+      properties:
+        industry_sector:
+          type: string
+        market_cap_range:
+          type: object
+          properties:
+            min:
+              type: number
+              format: float
+            max:
+              type: number
+              format: float
+        exclude_tickers:
+          type: array
+          items:
+            type: string
+        max_peers:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 10
+        exchange:
+          type: string
+          enum: [ASX, NZX, ASX_NZX]
+          default: ASX
+        financial_year_end:
+          type: string
+          description: Filter by financial year end (MM-DD format)
+          pattern: '^\d{2}-\d{2}$'
+
+    PeerGroupData:
+      type: object
+      properties:
+        criteria:
+          $ref: '#/components/schemas/PeerGroupRequest'
+        peers:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketData'
+        summary_statistics:
+          type: object
+          properties:
+            count:
+              type: integer
+            median_market_cap:
+              type: number
+              format: float
+            median_pe_ratio:
+              type: number
+              format: float
+            median_ev_ebitda:
+              type: number
+              format: float
+            median_revenue_growth:
+              type: number
+              format: float
+        generated_at:
+          type: string
+          format: date-time
+
+    IndustryBenchmarks:
+      type: object
+      properties:
+        industry_sector:
+          type: string
+        time_period:
+          type: string
+        valuation_multiples:
+          type: object
+          properties:
+            pe_ratio:
+              type: object
+              properties:
+                median:
+                  type: number
+                  format: float
+                percentile_25:
+                  type: number
+                  format: float
+                percentile_75:
+                  type: number
+                  format: float
+                mean:
+                  type: number
+                  format: float
+            ev_ebitda:
+              type: object
+              properties:
+                median:
+                  type: number
+                  format: float
+                percentile_25:
+                  type: number
+                  format: float
+                percentile_75:
+                  type: number
+                  format: float
+                mean:
+                  type: number
+                  format: float
+            price_sales:
+              type: object
+              properties:
+                median:
+                  type: number
+                  format: float
+                percentile_25:
+                  type: number
+                  format: float
+                percentile_75:
+                  type: number
+                  format: float
+                mean:
+                  type: number
+                  format: float
+        growth_metrics:
+          type: object
+          properties:
+            revenue_growth:
+              type: object
+              properties:
+                median:
+                  type: number
+                  format: float
+                percentile_25:
+                  type: number
+                  format: float
+                percentile_75:
+                  type: number
+                  format: float
+        sample_size:
+          type: integer
+        data_source:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+
+    UserProfile:
+      type: object
+      properties:
+        user_id:
+          type: string
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+        last_name:
+          type: string
+        company_name:
+          type: string
+        subscription_tier:
+          type: string
+          enum: [basic, professional, enterprise]
+        api_usage:
+          type: object
+          properties:
+            current_period_requests:
+              type: integer
+            rate_limit:
+              type: integer
+            reset_date:
+              type: string
+              format: date-time
+        preferences:
+          type: object
+          properties:
+            default_analysis_type:
+              type: string
+              enum: [basic, comprehensive, premium]
+            email_notifications:
+              type: boolean
+            webhook_notifications:
+              type: boolean
+        created_at:
+          type: string
+          format: date-time
+        last_login:
+          type: string
+          format: date-time
+
+    UserProfileUpdate:
+      type: object
+      properties:
+        first_name:
+          type: string
+          maxLength: 50
+        last_name:
+          type: string
+          maxLength: 50
+        company_name:
+          type: string
+          maxLength: 100
+        preferences:
+          type: object
+          properties:
+            default_analysis_type:
+              type: string
+              enum: [basic, comprehensive, premium]
+            email_notifications:
+              type: boolean
+            webhook_notifications:
+              type: boolean
+
+    WebhookRequest:
+      type: object
+      required:
+        - url
+        - events
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Webhook endpoint URL
+        events:
+          type: array
+          items:
+            type: string
+            enum: 
+              - valuation.created
+              - valuation.completed
+              - valuation.failed
+              - document.processed
+              - document.failed
+          description: Events to subscribe to
+        secret:
+          type: string
+          description: Secret for webhook signature validation
+          minLength: 16
+          maxLength: 64
+        active:
+          type: boolean
+          default: true
+
+    Webhook:
+      type: object
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        last_delivery:
+          type: string
+          format: date-time
+        delivery_stats:
+          type: object
+          properties:
+            total_deliveries:
+              type: integer
+            successful_deliveries:
+              type: integer
+            failed_deliveries:
+              type: integer
+            last_success:
+              type: string
+              format: date-time
+            last_failure:
+              type: string
+              format: date-time
+
+    ProcessingStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum: [processing, completed, failed]
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        estimated_completion:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      required:
+        - error
+        - message
+        - code
+      properties:
+        error:
+          type: string
+          description: Error identifier
+        message:
+          type: string
+          description: Human-readable error message
+        code:
+          type: integer
+          description: HTTP status code
+        details:
+          type: object
+          description: Additional error details
+          additionalProperties: true
+        timestamp:
+          type: string
+          format: date-time
+        request_id:
+          type: string
+          description: Unique request identifier for debugging
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid input parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            validation_error:
+              summary: Validation error
+              value:
+                error: "validation_error"
+                message: "The request contains invalid parameters"
+                code: 400
+                details:
+                  field_errors:
+                    expected_ipo_date: "Date must be in the future"
+                    shares_on_issue: "Must be a positive integer"
+                timestamp: "2024-01-15T10:30:00Z"
+                request_id: "req_abc123xyz"
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "unauthorized"
+            message: "Valid authentication credentials required"
+            code: 401
+            timestamp: "2024-01-15T10:30:00Z"
+            request_id: "req_def456uvw"
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "insufficient_permissions"
+            message: "Your subscription tier does not include access to this feature"
+            code: 403
+            details:
+              required_tier: "professional"
+              current_tier: "basic"
+            timestamp: "2024-01-15T10:30:00Z"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "resource_not_found"
+            message: "The requested resource could not be found"
+            code: 404
+            timestamp: "2024-01-15T10:30:00Z"
+
+    RateLimitExceeded:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "rate_limit_exceeded"
+            message: "Rate limit exceeded. Try again later."
+            code: 429
+            details:
+              limit: 100
+              remaining: 0
+              reset_time: "2024-01-15T11:30:00Z"
+            timestamp: "2024-01-15T10:30:00Z"
+      headers:
+        Retry-After:
+          description: Number of seconds to wait before retrying
+          schema:
+            type: integer
+          example: 3600
+        X-RateLimit-Limit:
+          description: Request limit per time window
+          schema:
+            type: integer
+          example: 100
+        X-RateLimit-Remaining:
+          description: Remaining requests in current window
+          schema:
+            type: integer
+          example: 0
+        X-RateLimit-Reset:
+          description: Time when rate limit resets
+          schema:
+            type: string
+            format: date-time
+          example: "2024-01-15T11:30:00Z"
+
+  examples:
+    TechCompanyValuation:
+      summary: Technology company valuation request
+      value:
+        company_name: "CloudTech Solutions Pty Ltd"
+        abn: "11223344556"
+        industry_sector: "Software & Services"
+        expected_ipo_date: "2024-09-15"
+        expected_offer_price_range:
+          min: 1.80
+          max: 2.20
+        shares_on_issue: 75000000
+        analysis_type: "comprehensive"
+        include_peer_analysis: true
+        risk_assessment_level: "detailed"
+
+  headers:
+    X-Request-ID:
+      description: Unique request identifier
+      schema:
+        type: string
+      example: "req_abc123def456ghi789"
+    X-RateLimit-Limit:
+      description: Number of requests allowed per time window
+      schema:
+        type: integer
+      example: 500
+    X-RateLimit-Remaining:
+      description: Number of requests remaining in current time window
+      schema:
+        type: integer
+      example: 487
+    X-RateLimit-Reset:
+      description: Time when rate limit counter resets
+      schema:
+        type: string
+        format: date-time
+      example: "2024-01-15T11:00:00Z"

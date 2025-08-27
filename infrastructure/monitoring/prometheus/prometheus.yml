@@ -1,0 +1,293 @@
+# Prometheus Configuration for IPO Valuation Platform
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'uprez-valuation'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Rule files
+rule_files:
+  - "rules/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Node Exporter (GKE nodes)
+  - job_name: 'node-exporter'
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '(.*):10250'
+        target_label: __address__
+        replacement: '${1}:9100'
+      - source_labels: [__meta_kubernetes_node_label_kubernetes_io_hostname]
+        target_label: instance
+
+  # Kubernetes API Server
+  - job_name: 'kubernetes-apiserver'
+    kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names: [default]
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: default;kubernetes;https
+
+  # Kubernetes Controller Manager
+  - job_name: 'kubernetes-controller-manager'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [kube-system]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_component]
+        action: keep
+        regex: kube-controller-manager
+      - source_labels: [__address__]
+        action: replace
+        target_label: __address__
+        regex: (.+):(?:\d+)
+        replacement: ${1}:10257
+
+  # Kubernetes Scheduler
+  - job_name: 'kubernetes-scheduler'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [kube-system]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_component]
+        action: keep
+        regex: kube-scheduler
+      - source_labels: [__address__]
+        action: replace
+        target_label: __address__
+        regex: (.+):(?:\d+)
+        replacement: ${1}:10259
+
+  # Kubelet metrics
+  - job_name: 'kubernetes-kubelet'
+    kubernetes_sd_configs:
+      - role: node
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+
+  # cAdvisor metrics
+  - job_name: 'kubernetes-cadvisor'
+    kubernetes_sd_configs:
+      - role: node
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '(.*):10250'
+        target_label: __address__
+        replacement: '${1}:10250'
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: node
+    metrics_path: /metrics/cadvisor
+
+  # Service Discovery for application services
+  - job_name: 'kubernetes-service-endpoints'
+    kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names: [uprez-valuation]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+        action: replace
+        target_label: __scheme__
+        regex: (https?)
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+        action: replace
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+      - action: labelmap
+        regex: __meta_kubernetes_service_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_service_name]
+        target_label: kubernetes_service
+
+  # Backend Application
+  - job_name: 'uprez-backend'
+    kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names: [uprez-valuation]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name]
+        action: keep
+        regex: backend-service
+      - source_labels: [__meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: metrics
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        target_label: node
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Frontend/Nginx metrics
+  - job_name: 'uprez-frontend'
+    kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names: [uprez-valuation]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name]
+        action: keep
+        regex: frontend-service
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        target_label: node
+    scrape_interval: 30s
+    metrics_path: /nginx_status
+
+  # PostgreSQL Exporter
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 30s
+
+  # Redis Exporter
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 30s
+
+  # Google Cloud Monitoring (Stackdriver)
+  - job_name: 'gcp-monitoring'
+    gce_sd_configs:
+      - project: 'PROJECT_ID_PLACEHOLDER'
+        zone: 'us-central1-a'
+        port: 9090
+    relabel_configs:
+      - source_labels: [__meta_gce_label_service]
+        target_label: service
+      - source_labels: [__meta_gce_label_environment]
+        target_label: environment
+
+  # Ingress Controller metrics
+  - job_name: 'nginx-ingress-controller'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [ingress-nginx]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        action: keep
+        regex: ingress-nginx
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+        action: keep
+        regex: controller
+      - source_labels: [__address__]
+        action: replace
+        target_label: __address__
+        regex: (.+):(?:\d+)
+        replacement: ${1}:10254
+
+  # Cert-Manager metrics
+  - job_name: 'cert-manager'
+    kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names: [cert-manager]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name]
+        action: keep
+        regex: cert-manager-metrics
+      - source_labels: [__meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: tcp-prometheus-servicemonitor
+
+  # External DNS metrics
+  - job_name: 'external-dns'
+    kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names: [external-dns]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name]
+        action: keep
+        regex: external-dns
+      - source_labels: [__address__]
+        action: replace
+        target_label: __address__
+        regex: (.+):(?:\d+)
+        replacement: ${1}:7979
+
+  # Custom application metrics
+  - job_name: 'custom-metrics'
+    static_configs:
+      - targets:
+        - 'custom-metrics-server:8080'
+    scrape_interval: 30s
+    metrics_path: /metrics
+    params:
+      format: ['prometheus']
+
+# Recording rules for performance optimization
+recording_rules:
+  - name: uprez_valuation_rules
+    rules:
+      - record: uprez:request_duration_seconds:rate5m
+        expr: rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m])
+      
+      - record: uprez:request_rate:5m
+        expr: rate(http_requests_total[5m])
+      
+      - record: uprez:error_rate:5m
+        expr: rate(http_requests_total{status=~"5.."}[5m])
+      
+      - record: uprez:availability:5m
+        expr: 1 - (rate(up == 0[5m]))
+
+# Remote write configuration (for long-term storage)
+remote_write:
+  - url: "https://prometheus-remote-write-endpoint/api/v1/write"
+    queue_config:
+      capacity: 10000
+      max_shards: 200
+      min_shards: 1
+      max_samples_per_send: 1000
+      batch_send_deadline: 5s
+      min_backoff: 30ms
+      max_backoff: 100ms

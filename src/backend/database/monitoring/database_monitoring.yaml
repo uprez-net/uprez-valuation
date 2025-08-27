@@ -1,0 +1,682 @@
+# =====================================================
+# Database Monitoring and Alerting Configuration
+# IPO Valuation Platform - Comprehensive Database Monitoring
+# =====================================================
+
+# =====================================================
+# MONITORING INFRASTRUCTURE
+# =====================================================
+
+monitoring_infrastructure:
+  # Primary monitoring platform
+  platform: "Google Cloud Monitoring"
+  
+  # Additional monitoring tools
+  additional_tools:
+    - name: "Prometheus"
+      purpose: "Custom metrics and alerting"
+      retention: "30 days"
+      
+    - name: "Grafana"
+      purpose: "Dashboards and visualizations"
+      
+    - name: "pgAdmin"
+      purpose: "PostgreSQL specific monitoring"
+      
+    - name: "Redis Monitor"
+      purpose: "Redis performance monitoring"
+      
+  # Monitoring agents
+  agents:
+    cloud_monitoring_agent:
+      enabled: true
+      collection_interval: "60s"
+      
+    prometheus_exporter:
+      enabled: true
+      postgres_exporter: true
+      redis_exporter: true
+      
+# =====================================================
+# DATABASE PERFORMANCE METRICS
+# =====================================================
+
+performance_metrics:
+  # PostgreSQL metrics
+  postgresql:
+    # Connection metrics
+    connections:
+      active_connections:
+        metric: "postgresql_active_connections"
+        description: "Number of active database connections"
+        collection_interval: "30s"
+        alert_thresholds:
+          warning: 150
+          critical: 180
+          
+      connection_utilization:
+        metric: "postgresql_connection_utilization"
+        description: "Percentage of max connections in use"
+        calculation: "active_connections / max_connections * 100"
+        alert_thresholds:
+          warning: 70
+          critical: 85
+          
+    # Query performance metrics
+    queries:
+      slow_queries:
+        metric: "postgresql_slow_queries"
+        description: "Queries taking longer than threshold"
+        threshold: "1000ms"
+        collection_interval: "60s"
+        alert_thresholds:
+          warning: 10
+          critical: 25
+          
+      query_duration_p95:
+        metric: "postgresql_query_duration_p95"
+        description: "95th percentile query execution time"
+        collection_interval: "60s"
+        alert_thresholds:
+          warning: 500
+          critical: 2000
+          
+      queries_per_second:
+        metric: "postgresql_queries_per_second"
+        description: "Total queries executed per second"
+        collection_interval: "30s"
+        
+    # Memory and buffer metrics
+    memory:
+      buffer_hit_ratio:
+        metric: "postgresql_buffer_hit_ratio"
+        description: "Percentage of requests served from buffer cache"
+        calculation: "shared_blks_hit / (shared_blks_hit + shared_blks_read) * 100"
+        collection_interval: "60s"
+        alert_thresholds:
+          warning: 95  # Below 95% hit ratio
+          critical: 90
+          
+      shared_buffers_usage:
+        metric: "postgresql_shared_buffers_usage"
+        description: "Usage of shared buffer pool"
+        collection_interval: "60s"
+        alert_thresholds:
+          warning: 80
+          critical: 90
+          
+    # Storage and I/O metrics
+    storage:
+      disk_usage:
+        metric: "postgresql_disk_usage"
+        description: "Database storage utilization"
+        collection_interval: "300s"
+        alert_thresholds:
+          warning: 80
+          critical: 90
+          
+      disk_iops:
+        metric: "postgresql_disk_iops"
+        description: "Disk I/O operations per second"
+        collection_interval: "60s"
+        
+      checkpoint_frequency:
+        metric: "postgresql_checkpoint_frequency"
+        description: "Frequency of checkpoint operations"
+        collection_interval: "300s"
+        alert_thresholds:
+          warning: 5  # More than 5 per minute
+          
+    # Replication metrics (if using replicas)
+    replication:
+      replication_lag:
+        metric: "postgresql_replication_lag"
+        description: "Replication lag in seconds"
+        collection_interval: "30s"
+        alert_thresholds:
+          warning: 30
+          critical: 60
+          
+      replica_status:
+        metric: "postgresql_replica_status"
+        description: "Status of replica connections"
+        collection_interval: "60s"
+        
+  # BigQuery metrics
+  bigquery:
+    # Query performance
+    queries:
+      query_execution_time:
+        metric: "bigquery_query_execution_time"
+        description: "Query execution duration"
+        collection_interval: "60s"
+        
+      query_cost:
+        metric: "bigquery_query_cost"
+        description: "Cost of query execution in USD"
+        collection_interval: "300s"
+        
+      bytes_processed:
+        metric: "bigquery_bytes_processed"
+        description: "Amount of data processed by queries"
+        collection_interval: "60s"
+        
+    # Storage metrics
+    storage:
+      table_size:
+        metric: "bigquery_table_size"
+        description: "Size of individual tables"
+        collection_interval: "3600s"
+        
+      dataset_size:
+        metric: "bigquery_dataset_size"
+        description: "Total size of datasets"
+        collection_interval: "3600s"
+        alert_thresholds:
+          warning: "1TB"
+          critical: "5TB"
+          
+    # Slot utilization
+    slots:
+      slot_utilization:
+        metric: "bigquery_slot_utilization"
+        description: "Percentage of slots in use"
+        collection_interval: "60s"
+        alert_thresholds:
+          warning: 80
+          critical: 95
+          
+  # Redis metrics
+  redis:
+    # Memory metrics
+    memory:
+      memory_usage:
+        metric: "redis_memory_usage"
+        description: "Redis memory usage in bytes"
+        collection_interval: "30s"
+        alert_thresholds:
+          warning: 80  # Percentage of max memory
+          critical: 90
+          
+      memory_fragmentation:
+        metric: "redis_memory_fragmentation_ratio"
+        description: "Memory fragmentation ratio"
+        collection_interval: "60s"
+        alert_thresholds:
+          warning: 1.5
+          critical: 2.0
+          
+    # Performance metrics
+    performance:
+      operations_per_second:
+        metric: "redis_operations_per_second"
+        description: "Redis operations per second"
+        collection_interval: "30s"
+        
+      hit_ratio:
+        metric: "redis_hit_ratio"
+        description: "Cache hit ratio percentage"
+        calculation: "keyspace_hits / (keyspace_hits + keyspace_misses) * 100"
+        collection_interval: "60s"
+        alert_thresholds:
+          warning: 85
+          critical: 80
+          
+      latency:
+        metric: "redis_latency"
+        description: "Average command execution latency"
+        collection_interval: "30s"
+        alert_thresholds:
+          warning: 1  # 1ms
+          critical: 5  # 5ms
+          
+    # Connection metrics
+    connections:
+      connected_clients:
+        metric: "redis_connected_clients"
+        description: "Number of connected clients"
+        collection_interval: "30s"
+        alert_thresholds:
+          warning: 8000
+          critical: 9500
+          
+# =====================================================
+# APPLICATION-SPECIFIC METRICS
+# =====================================================
+
+application_metrics:
+  # Business metrics
+  business:
+    valuation_creation_rate:
+      metric: "app_valuations_created_per_hour"
+      description: "Rate of valuation creation"
+      collection_interval: "300s"
+      
+    company_data_freshness:
+      metric: "app_company_data_age"
+      description: "Age of company financial data"
+      collection_interval: "3600s"
+      alert_thresholds:
+        warning: 86400  # 1 day
+        critical: 259200  # 3 days
+        
+    user_session_duration:
+      metric: "app_user_session_duration"
+      description: "Average user session duration"
+      collection_interval: "300s"
+      
+  # Error metrics
+  errors:
+    database_errors:
+      metric: "app_database_errors"
+      description: "Database-related application errors"
+      collection_interval: "60s"
+      alert_thresholds:
+        warning: 5
+        critical: 15
+        
+    api_error_rate:
+      metric: "app_api_error_rate"
+      description: "Percentage of API requests resulting in errors"
+      collection_interval: "60s"
+      alert_thresholds:
+        warning: 1  # 1%
+        critical: 5  # 5%
+        
+    calculation_failures:
+      metric: "app_calculation_failures"
+      description: "Failed valuation calculations"
+      collection_interval: "300s"
+      alert_thresholds:
+        warning: 1
+        critical: 5
+        
+# =====================================================
+# ALERT CONFIGURATIONS
+# =====================================================
+
+alerting:
+  # Alert channels
+  notification_channels:
+    email:
+      - name: "ops_team"
+        email: "ops@uprez.com"
+        
+      - name: "engineering_team"
+        email: "engineering@uprez.com"
+        
+      - name: "dba_team"
+        email: "dba@uprez.com"
+        
+    slack:
+      - name: "ops_alerts"
+        webhook: "https://hooks.slack.com/services/..."
+        
+      - name: "critical_alerts"
+        webhook: "https://hooks.slack.com/services/..."
+        
+    pagerduty:
+      - name: "on_call"
+        service_key: "your-pagerduty-service-key"
+        
+  # Alert policies
+  alert_policies:
+    # Critical database alerts
+    database_critical:
+      name: "Database Critical Issues"
+      conditions:
+        - metric: "postgresql_connection_utilization"
+          threshold: 85
+          duration: "2m"
+          
+        - metric: "postgresql_buffer_hit_ratio"
+          threshold: 90
+          comparison: "LESS_THAN"
+          duration: "5m"
+          
+        - metric: "redis_memory_usage"
+          threshold: 90
+          duration: "2m"
+          
+      notification_channels: ["ops_team", "critical_alerts", "on_call"]
+      severity: "critical"
+      
+    # Performance degradation alerts
+    performance_warning:
+      name: "Performance Degradation"
+      conditions:
+        - metric: "postgresql_slow_queries"
+          threshold: 10
+          duration: "5m"
+          
+        - metric: "redis_hit_ratio"
+          threshold: 85
+          comparison: "LESS_THAN"
+          duration: "10m"
+          
+        - metric: "bigquery_query_execution_time"
+          threshold: 30000  # 30 seconds
+          duration: "5m"
+          
+      notification_channels: ["engineering_team", "ops_alerts"]
+      severity: "warning"
+      
+    # Storage alerts
+    storage_alerts:
+      name: "Storage Space Issues"
+      conditions:
+        - metric: "postgresql_disk_usage"
+          threshold: 80
+          duration: "1m"
+          
+        - metric: "bigquery_dataset_size"
+          threshold: "1TB"
+          duration: "1h"
+          
+      notification_channels: ["ops_team", "dba_team"]
+      severity: "warning"
+      
+    # Application-specific alerts
+    application_alerts:
+      name: "Application Issues"
+      conditions:
+        - metric: "app_database_errors"
+          threshold: 15
+          duration: "5m"
+          
+        - metric: "app_api_error_rate"
+          threshold: 5
+          duration: "5m"
+          
+        - metric: "app_company_data_age"
+          threshold: 259200  # 3 days
+          duration: "1h"
+          
+      notification_channels: ["engineering_team"]
+      severity: "warning"
+      
+# =====================================================
+# DASHBOARDS
+# =====================================================
+
+dashboards:
+  # Executive dashboard
+  executive:
+    name: "IPO Valuation Platform - Executive Overview"
+    panels:
+      - title: "Active Users"
+        type: "stat"
+        metric: "app_active_users"
+        
+      - title: "Valuations Created Today"
+        type: "stat"
+        metric: "app_valuations_created_today"
+        
+      - title: "System Uptime"
+        type: "stat"
+        metric: "system_uptime_percentage"
+        
+      - title: "Error Rate Trend"
+        type: "graph"
+        metric: "app_api_error_rate"
+        time_range: "24h"
+        
+  # Operations dashboard
+  operations:
+    name: "Database Operations Dashboard"
+    panels:
+      - title: "PostgreSQL Connections"
+        type: "graph"
+        metrics:
+          - "postgresql_active_connections"
+          - "postgresql_connection_utilization"
+        time_range: "4h"
+        
+      - title: "Query Performance"
+        type: "graph"
+        metrics:
+          - "postgresql_query_duration_p95"
+          - "postgresql_slow_queries"
+        time_range: "4h"
+        
+      - title: "Buffer Hit Ratio"
+        type: "graph"
+        metric: "postgresql_buffer_hit_ratio"
+        time_range: "24h"
+        
+      - title: "Redis Memory Usage"
+        type: "graph"
+        metric: "redis_memory_usage"
+        time_range: "4h"
+        
+      - title: "Cache Hit Ratio"
+        type: "graph"
+        metric: "redis_hit_ratio"
+        time_range: "4h"
+        
+  # Performance dashboard
+  performance:
+    name: "Database Performance Analysis"
+    panels:
+      - title: "Top Slow Queries"
+        type: "table"
+        query: "pg_stat_statements top slow queries"
+        
+      - title: "Index Usage"
+        type: "table"
+        query: "pg_stat_user_indexes usage statistics"
+        
+      - title: "Table Statistics"
+        type: "table"
+        query: "pg_stat_user_tables activity"
+        
+      - title: "BigQuery Query Costs"
+        type: "graph"
+        metric: "bigquery_query_cost"
+        time_range: "7d"
+        
+# =====================================================
+# LOG MONITORING
+# =====================================================
+
+log_monitoring:
+  # PostgreSQL logs
+  postgresql:
+    log_patterns:
+      slow_queries:
+        pattern: "duration: [0-9]+ ms"
+        threshold: "1000ms"
+        alert: true
+        
+      connection_errors:
+        pattern: "connection received: host.*port.*"
+        alert: true
+        severity: "warning"
+        
+      lock_waits:
+        pattern: "process .* still waiting for .* lock"
+        alert: true
+        severity: "critical"
+        
+      deadlocks:
+        pattern: "deadlock detected"
+        alert: true
+        severity: "critical"
+        
+    log_analysis:
+      automated_analysis: true
+      error_categorization: true
+      trend_detection: true
+      
+  # Application logs
+  application:
+    log_patterns:
+      database_connection_failures:
+        pattern: "database connection failed"
+        alert: true
+        severity: "critical"
+        
+      valuation_calculation_errors:
+        pattern: "valuation calculation failed"
+        alert: true
+        severity: "warning"
+        
+      authentication_failures:
+        pattern: "authentication failed"
+        threshold: 5
+        time_window: "5m"
+        alert: true
+        
+# =====================================================
+# AUTOMATED REMEDIATION
+# =====================================================
+
+automated_remediation:
+  # Connection management
+  connection_management:
+    kill_long_running_queries:
+      enabled: true
+      threshold: "300s"  # 5 minutes
+      exclude_users: ["backup_user", "analytics_user"]
+      
+    connection_pooling_adjustment:
+      enabled: true
+      auto_scale: true
+      min_connections: 10
+      max_connections: 200
+      
+  # Cache management
+  cache_management:
+    redis_memory_cleanup:
+      enabled: true
+      trigger: "memory_usage > 85%"
+      actions:
+        - "expire_old_keys"
+        - "compress_large_values"
+        
+  # Performance optimization
+  performance_optimization:
+    auto_vacuum_tuning:
+      enabled: true
+      aggressive_mode_threshold: "table_bloat > 50%"
+      
+    index_maintenance:
+      enabled: true
+      reindex_threshold: "index_bloat > 30%"
+      schedule: "daily_maintenance_window"
+      
+# =====================================================
+# REPORTING
+# =====================================================
+
+reporting:
+  # Daily reports
+  daily_reports:
+    database_health:
+      enabled: true
+      recipients: ["dba@uprez.com", "ops@uprez.com"]
+      content:
+        - "connection_statistics"
+        - "query_performance_summary"
+        - "storage_usage"
+        - "error_summary"
+        
+  # Weekly reports
+  weekly_reports:
+    performance_analysis:
+      enabled: true
+      recipients: ["engineering@uprez.com"]
+      content:
+        - "slow_query_analysis"
+        - "index_usage_report"
+        - "capacity_planning"
+        - "cost_analysis"
+        
+  # Monthly reports
+  monthly_reports:
+    capacity_planning:
+      enabled: true
+      recipients: ["infrastructure@uprez.com"]
+      content:
+        - "growth_trends"
+        - "resource_utilization"
+        - "cost_optimization_opportunities"
+        - "performance_recommendations"
+        
+# =====================================================
+# MAINTENANCE WINDOWS
+# =====================================================
+
+maintenance:
+  # Scheduled maintenance
+  scheduled_maintenance:
+    daily:
+      time: "02:00 UTC"
+      duration: "1h"
+      activities:
+        - "analyze_tables"
+        - "refresh_materialized_views"
+        - "clean_old_logs"
+        
+    weekly:
+      day: "Sunday"
+      time: "01:00 UTC"
+      duration: "2h"
+      activities:
+        - "full_vacuum_analyze"
+        - "reindex_fragmented_indexes"
+        - "backup_verification"
+        
+    monthly:
+      day: "First Sunday"
+      time: "00:00 UTC"
+      duration: "4h"
+      activities:
+        - "major_version_updates"
+        - "configuration_review"
+        - "performance_tuning"
+        
+  # Emergency maintenance
+  emergency_maintenance:
+    procedures:
+      database_failover:
+        automated: true
+        notification: "immediate"
+        
+      storage_cleanup:
+        automated: true
+        threshold: "disk_usage > 95%"
+        
+# =====================================================
+# INTEGRATION SETTINGS
+# =====================================================
+
+integrations:
+  # Cloud Monitoring integration
+  cloud_monitoring:
+    project_id: "uprez-valuation"
+    service_account: "monitoring@uprez-valuation.iam.gserviceaccount.com"
+    
+  # Prometheus integration
+  prometheus:
+    scrape_interval: "30s"
+    retention: "30d"
+    
+    exporters:
+      postgres_exporter:
+        port: 9187
+        database_url: "postgresql://monitoring_user@localhost/postgres"
+        
+      redis_exporter:
+        port: 9121
+        redis_addr: "localhost:6379"
+        
+  # External monitoring services
+  external_services:
+    datadog:
+      enabled: false
+      api_key: "your-datadog-api-key"
+      
+    new_relic:
+      enabled: false
+      license_key: "your-newrelic-license-key"

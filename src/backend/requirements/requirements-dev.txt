@@ -1,0 +1,25 @@
+# Development Requirements
+-r requirements.txt
+
+# Development Tools
+jupyter==1.0.0
+ipykernel==6.26.0
+notebook==7.0.6
+
+# Code Quality
+pre-commit==3.6.0
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+mypy==1.7.1
+bandit==1.7.5
+
+# Testing
+pytest-mock==3.12.0
+pytest-xdist==3.4.0
+coverage==7.3.2
+faker==20.1.0
+
+# Documentation
+mkdocs==1.5.3
+mkdocs-material==9.4.8

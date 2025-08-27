@@ -1,0 +1,10 @@
+
+# Claude Flow generated files
+.claude/settings.local.json
+.mcp.json
+claude-flow.config.json
+*.sqlite-journal
+*.sqlite-wal
+claude-flow.bat
+claude-flow.ps1
+hive-mind-prompt-*.txt

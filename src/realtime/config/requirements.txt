@@ -1,0 +1,63 @@
+# Real-time Collaboration System Requirements
+
+# FastAPI and WebSocket support
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+websockets==12.0
+python-multipart==0.0.6
+
+# Redis for pub/sub and caching
+redis[hiredis]==5.0.1
+aioredis==2.0.1
+
+# Database support
+sqlalchemy==2.0.23
+asyncpg==0.29.0
+alembic==1.12.1
+
+# Authentication and security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+
+# Performance monitoring
+psutil==5.9.6
+prometheus-client==0.19.0
+
+# Data processing and validation
+pydantic==2.5.0
+numpy==1.25.2
+pandas==2.1.3
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+httpx==0.25.2
+
+# Development tools
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+pre-commit==3.5.0
+
+# Logging and monitoring
+structlog==23.2.0
+sentry-sdk[fastapi]==1.38.0
+
+# Utilities
+python-dotenv==1.0.0
+click==8.1.7
+rich==13.7.0
+
+# Optional: Machine Learning for advanced features
+scikit-learn==1.3.2
+joblib==1.3.2
+
+# Optional: Advanced data formats
+orjson==3.9.10
+msgpack==1.0.7
+
+# Optional: Compression
+zstandard==0.22.0
+lz4==4.3.2

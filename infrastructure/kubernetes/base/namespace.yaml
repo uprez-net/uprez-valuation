@@ -1,0 +1,63 @@
+# Kubernetes Namespace Configuration
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: uprez-valuation
+  labels:
+    app.kubernetes.io/name: uprez-valuation
+    app.kubernetes.io/component: namespace
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: kustomize
+    environment: production
+  annotations:
+    description: "IPO Valuation Platform namespace"
+    contact: "devops@uprez.com"
+spec:
+  finalizers:
+    - kubernetes
+---
+# Resource Quota for the namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: compute-resources
+  namespace: uprez-valuation
+  labels:
+    app.kubernetes.io/name: uprez-valuation
+    app.kubernetes.io/component: resource-quota
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    persistentvolumeclaims: "10"
+    pods: "20"
+    services: "10"
+    secrets: "20"
+    configmaps: "20"
+---
+# Limit Range for pods in the namespace
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: pod-limit-range
+  namespace: uprez-valuation
+  labels:
+    app.kubernetes.io/name: uprez-valuation
+    app.kubernetes.io/component: limit-range
+spec:
+  limits:
+  - default:
+      cpu: 500m
+      memory: 512Mi
+    defaultRequest:
+      cpu: 100m
+      memory: 128Mi
+    max:
+      cpu: "2"
+      memory: 2Gi
+    min:
+      cpu: 50m
+      memory: 64Mi
+    type: Container

@@ -1,0 +1,1011 @@
+# UpRez IPO Valuation Platform GraphQL Schema
+# Version 1.0.0
+# 
+# This schema provides a comprehensive GraphQL interface for complex data relationships
+# and real-time subscriptions for the IPO valuation platform.
+
+"""
+Date scalar type for handling dates in ISO 8601 format
+"""
+scalar Date
+
+"""
+DateTime scalar type for handling timestamps in ISO 8601 format
+"""
+scalar DateTime
+
+"""
+JSON scalar type for flexible object storage
+"""
+scalar JSON
+
+"""
+Upload scalar type for file uploads
+"""
+scalar Upload
+
+"""
+Decimal scalar type for precise financial calculations
+"""
+scalar Decimal
+
+# ===== ENUMS =====
+
+enum ValuationStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum DocumentType {
+  PROSPECTUS
+  FINANCIAL_STATEMENTS
+  ANNUAL_REPORT
+  OFFERING_MEMORANDUM
+  COMPANY_PROFILE
+  OTHER
+}
+
+enum ProcessingStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum IndustrySector {
+  TECHNOLOGY
+  SOFTWARE_SERVICES
+  HEALTHCARE
+  BIOTECH
+  FINANCIAL_SERVICES
+  MATERIALS
+  ENERGY
+  CONSUMER_DISCRETIONARY
+  CONSUMER_STAPLES
+  INDUSTRIALS
+  REAL_ESTATE
+  UTILITIES
+  TELECOMMUNICATIONS
+}
+
+enum AnalysisType {
+  BASIC
+  COMPREHENSIVE
+  PREMIUM
+}
+
+enum RiskAssessmentLevel {
+  BASIC
+  DETAILED
+  COMPREHENSIVE
+}
+
+enum RiskCategory {
+  MARKET
+  FINANCIAL
+  OPERATIONAL
+  REGULATORY
+  MANAGEMENT
+}
+
+enum RiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ValuationMethod {
+  DCF
+  MULTIPLES
+  ASSET_BASED
+  SUM_OF_PARTS
+}
+
+enum SubscriptionTier {
+  BASIC
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum ReportTemplate {
+  EXECUTIVE
+  DETAILED
+  TECHNICAL
+  PITCH_DECK
+}
+
+enum Exchange {
+  ASX
+  NZX
+  ASX_NZX
+}
+
+enum WebhookEvent {
+  VALUATION_CREATED
+  VALUATION_COMPLETED
+  VALUATION_FAILED
+  DOCUMENT_PROCESSED
+  DOCUMENT_FAILED
+}
+
+enum ProcessingStage {
+  QUEUED
+  DOCUMENT_PROCESSING
+  MARKET_DATA_COLLECTION
+  PEER_ANALYSIS
+  FINANCIAL_MODELING
+  RISK_ASSESSMENT
+  VALUATION_CALCULATION
+  REPORT_GENERATION
+  COMPLETED
+  FAILED
+}
+
+# ===== INPUT TYPES =====
+
+input ValuationRequestInput {
+  companyName: String!
+  abn: String
+  industrySector: IndustrySector!
+  expectedIpoDate: Date!
+  expectedOfferPriceRange: PriceRangeInput
+  sharesOnIssue: Int!
+  analysisType: AnalysisType = COMPREHENSIVE
+  includePeerAnalysis: Boolean = true
+  riskAssessmentLevel: RiskAssessmentLevel = DETAILED
+  documentIds: [ID!]
+  customParameters: JSON
+}
+
+input PriceRangeInput {
+  min: Decimal!
+  max: Decimal!
+}
+
+input DocumentUploadInput {
+  file: Upload!
+  documentType: DocumentType!
+  valuationJobId: ID
+  processingOptions: DocumentProcessingOptionsInput
+}
+
+input DocumentProcessingOptionsInput {
+  extractFinancialData: Boolean = true
+  extractRiskFactors: Boolean = true
+  extractBusinessDescription: Boolean = true
+  ocrEnabled: Boolean = true
+}
+
+input PeerGroupRequestInput {
+  industrySector: IndustrySector!
+  marketCapRange: MarketCapRangeInput
+  excludeTickers: [String!]
+  maxPeers: Int = 10
+  exchange: Exchange = ASX
+  financialYearEnd: String
+}
+
+input MarketCapRangeInput {
+  min: Decimal
+  max: Decimal
+}
+
+input UserProfileUpdateInput {
+  firstName: String
+  lastName: String
+  companyName: String
+  preferences: UserPreferencesInput
+}
+
+input UserPreferencesInput {
+  defaultAnalysisType: AnalysisType
+  emailNotifications: Boolean
+  webhookNotifications: Boolean
+}
+
+input WebhookInput {
+  url: String!
+  events: [WebhookEvent!]!
+  secret: String
+  active: Boolean = true
+}
+
+input ValuationFilterInput {
+  status: ValuationStatus
+  companyName: String
+  dateFrom: Date
+  dateTo: Date
+  industrySector: IndustrySector
+}
+
+input PaginationInput {
+  page: Int = 1
+  limit: Int = 20
+}
+
+# ===== TYPES =====
+
+type Query {
+  """
+  Get current user profile
+  """
+  me: User!
+
+  """
+  Get a specific valuation by ID
+  """
+  valuation(id: ID!): Valuation
+
+  """
+  List valuations with optional filtering and pagination
+  """
+  valuations(
+    filter: ValuationFilterInput
+    pagination: PaginationInput
+  ): ValuationConnection!
+
+  """
+  Get market data for a specific company ticker
+  """
+  marketData(
+    ticker: String!
+    includeHistorical: Boolean = false
+    historicalPeriod: String = "1Y"
+  ): MarketData
+
+  """
+  Find peer group companies based on criteria
+  """
+  peerGroup(request: PeerGroupRequestInput!): PeerGroupData!
+
+  """
+  Get industry benchmarks for a specific sector
+  """
+  industryBenchmarks(
+    industrySector: IndustrySector!
+    timePeriod: String = "current"
+  ): IndustryBenchmarks!
+
+  """
+  Get document extraction results
+  """
+  documentExtraction(jobId: ID!): ExtractionResult
+
+  """
+  List user webhooks
+  """
+  webhooks: [Webhook!]!
+
+  """
+  Search for companies by name or ticker
+  """
+  searchCompanies(
+    query: String!
+    limit: Int = 10
+    exchange: Exchange = ASX
+  ): [Company!]!
+
+  """
+  Get valuation analytics and insights
+  """
+  valuationAnalytics(
+    timePeriod: String = "30d"
+    industrySector: IndustrySector
+  ): ValuationAnalytics!
+
+  """
+  Get system health status
+  """
+  health: HealthStatus!
+}
+
+type Mutation {
+  """
+  Create a new valuation request
+  """
+  createValuation(input: ValuationRequestInput!): ValuationResponse!
+
+  """
+  Cancel a pending or processing valuation
+  """
+  cancelValuation(id: ID!): Valuation!
+
+  """
+  Upload a document for processing
+  """
+  uploadDocument(input: DocumentUploadInput!): DocumentUploadResponse!
+
+  """
+  Update user profile
+  """
+  updateProfile(input: UserProfileUpdateInput!): User!
+
+  """
+  Create a new webhook
+  """
+  createWebhook(input: WebhookInput!): Webhook!
+
+  """
+  Update an existing webhook
+  """
+  updateWebhook(id: ID!, input: WebhookInput!): Webhook!
+
+  """
+  Delete a webhook
+  """
+  deleteWebhook(id: ID!): Boolean!
+
+  """
+  Generate a PDF report for a completed valuation
+  """
+  generateReport(
+    valuationId: ID!
+    template: ReportTemplate = EXECUTIVE
+    includeSections: [String!]
+  ): ReportGenerationResponse!
+
+  """
+  Refresh market data for active valuations
+  """
+  refreshMarketData: Boolean!
+
+  """
+  Request data export for user's valuations
+  """
+  requestDataExport(format: String = "json"): DataExportRequest!
+}
+
+type Subscription {
+  """
+  Subscribe to valuation status updates
+  """
+  valuationUpdates(id: ID!): ValuationStatusUpdate!
+
+  """
+  Subscribe to document processing updates
+  """
+  documentProcessingUpdates(jobId: ID!): DocumentProcessingUpdate!
+
+  """
+  Subscribe to market data updates for specific tickers
+  """
+  marketDataUpdates(tickers: [String!]!): MarketDataUpdate!
+
+  """
+  Subscribe to user notification events
+  """
+  userNotifications: UserNotification!
+
+  """
+  Subscribe to system status updates
+  """
+  systemStatus: SystemStatusUpdate!
+}
+
+# ===== CORE TYPES =====
+
+type User {
+  id: ID!
+  email: String!
+  firstName: String
+  lastName: String
+  companyName: String
+  subscriptionTier: SubscriptionTier!
+  apiUsage: ApiUsage!
+  preferences: UserPreferences!
+  createdAt: DateTime!
+  lastLogin: DateTime
+  
+  """
+  User's valuations with pagination
+  """
+  valuations(
+    first: Int = 20
+    after: String
+    filter: ValuationFilterInput
+  ): ValuationConnection!
+  
+  """
+  User's uploaded documents
+  """
+  documents(first: Int = 20, after: String): DocumentConnection!
+  
+  """
+  User's configured webhooks
+  """
+  webhooks: [Webhook!]!
+}
+
+type ApiUsage {
+  currentPeriodRequests: Int!
+  rateLimit: Int!
+  resetDate: DateTime!
+  remainingRequests: Int!
+}
+
+type UserPreferences {
+  defaultAnalysisType: AnalysisType!
+  emailNotifications: Boolean!
+  webhookNotifications: Boolean!
+}
+
+type Valuation {
+  id: ID!
+  companyName: String!
+  abn: String
+  industrySector: IndustrySector!
+  expectedIpoDate: Date!
+  expectedOfferPriceRange: PriceRange
+  sharesOnIssue: Int!
+  analysisType: AnalysisType!
+  status: ValuationStatus!
+  
+  # Processing information
+  progress: Int!
+  currentStage: ProcessingStage!
+  stageDescription: String
+  estimatedCompletion: DateTime
+  startedAt: DateTime
+  completedAt: DateTime
+  
+  # Results (only available when completed)
+  result: ValuationResult
+  
+  # Related data
+  documents: [Document!]!
+  processingStages: [ProcessingStageInfo!]!
+  
+  # User information
+  user: User!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type ValuationResult {
+  targetPrice: Decimal!
+  priceRange: PriceRange!
+  marketCapitalization: Decimal!
+  valuationMethod: ValuationMethod!
+  confidenceScore: Float!
+  
+  # Analysis components
+  peerAnalysis: PeerAnalysis!
+  riskAssessment: RiskAssessment!
+  scenarioAnalysis: ScenarioAnalysis!
+  financialMetrics: FinancialMetrics!
+  marketData: MarketDataSnapshot!
+  methodology: ValuationMethodology!
+  
+  generatedAt: DateTime!
+  expiresAt: DateTime!
+}
+
+type PriceRange {
+  low: Decimal!
+  high: Decimal!
+  mid: Decimal!
+}
+
+type PeerAnalysis {
+  peerCompanies: [PeerCompany!]!
+  industryMultiples: IndustryMultiples!
+  relativePricing: RelativePricing!
+}
+
+type PeerCompany {
+  ticker: String!
+  companyName: String!
+  marketCap: Decimal!
+  peRatio: Float
+  evEbitda: Float
+  priceToSales: Float
+  revenuGrowth: Float
+  similarity: Float!
+}
+
+type IndustryMultiples {
+  medianPE: Float!
+  medianEvEbitda: Float!
+  medianPriceSales: Float!
+  peerCount: Int!
+}
+
+type RelativePricing {
+  premiumToMedian: Float!
+  percentileRanking: Int!
+  justification: String!
+}
+
+type RiskAssessment {
+  overallRiskScore: Float!
+  riskFactors: [RiskFactor!]!
+  riskMitigation: [String!]!
+  impactOnValuation: String!
+}
+
+type RiskFactor {
+  category: RiskCategory!
+  severity: RiskSeverity!
+  description: String!
+  impactOnValuation: String!
+  likelihood: Float!
+  financialImpact: Decimal
+}
+
+type ScenarioAnalysis {
+  baseCase: Scenario!
+  bullCase: Scenario!
+  bearCase: Scenario!
+  sensitivityAnalysis: [SensitivityFactor!]!
+}
+
+type Scenario {
+  price: Decimal!
+  probability: Float!
+  keyAssumptions: [String!]!
+  revenueGrowth: Float!
+  marginAssumptions: JSON!
+}
+
+type SensitivityFactor {
+  parameter: String!
+  baseValue: Float!
+  sensitivityRange: [Float!]!
+  priceImpact: [Decimal!]!
+}
+
+type FinancialMetrics {
+  revenueGrowth: Float!
+  ebitdaMargin: Float!
+  roe: Float!
+  debtToEquity: Float!
+  currentRatio: Float!
+  workingCapitalCycle: Int!
+  fcfYield: Float!
+}
+
+type ValuationMethodology {
+  primaryMethod: ValuationMethod!
+  weighting: JSON!
+  assumptions: [String!]!
+  limitations: [String!]!
+  dataQuality: DataQualityAssessment!
+}
+
+type DataQualityAssessment {
+  completeness: Float!
+  accuracy: Float!
+  recency: Float!
+  overallScore: Float!
+  issues: [String!]!
+}
+
+type Document {
+  id: ID!
+  filename: String!
+  documentType: DocumentType!
+  fileUrl: String!
+  processingStatus: ProcessingStatus!
+  extractionResult: ExtractionResult
+  user: User!
+  valuationJobs: [Valuation!]!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type ExtractionResult {
+  jobId: ID!
+  documentType: DocumentType!
+  extractedData: JSON!
+  confidenceScore: Float!
+  validationErrors: [ValidationError!]!
+  processingDetails: ProcessingDetails!
+}
+
+type ValidationError {
+  field: String!
+  error: String!
+  severity: String!
+}
+
+type ProcessingDetails {
+  pagesProcessed: Int!
+  ocrApplied: Boolean!
+  processingTime: Float!
+  extractedEntities: [String!]!
+  dataPoints: Int!
+}
+
+type MarketData {
+  ticker: String!
+  companyName: String!
+  currentPrice: Decimal!
+  marketCap: Decimal!
+  sharesOutstanding: Int!
+  volume: Int!
+  peRatio: Float
+  evEbitda: Float
+  dividendYield: Float
+  priceChange1d: Float!
+  priceChange1m: Float!
+  priceChange1y: Float!
+  week52High: Decimal!
+  week52Low: Decimal!
+  lastUpdated: DateTime!
+  
+  # Historical data (when requested)
+  historicalData: [HistoricalDataPoint!]!
+  
+  # Real-time indicators
+  isRealTime: Boolean!
+  dataSource: String!
+  exchangeStatus: String!
+}
+
+type HistoricalDataPoint {
+  date: Date!
+  open: Decimal!
+  high: Decimal!
+  low: Decimal!
+  close: Decimal!
+  volume: Int!
+  adjustedClose: Decimal!
+}
+
+type MarketDataSnapshot {
+  collectionTimestamp: DateTime!
+  asxIndexLevel: Decimal!
+  sectorPerformance: Float!
+  marketSentiment: String!
+  volatilityIndex: Float!
+  economicContext: EconomicContext!
+}
+
+type EconomicContext {
+  cashRate: Float!
+  inflationRate: Float!
+  gdpGrowth: Float!
+  unemploymentRate: Float!
+  aaudRate: Float!
+  bondYield10y: Float!
+}
+
+type Company {
+  ticker: String!
+  name: String!
+  exchange: Exchange!
+  industrySector: IndustrySector!
+  marketCap: Decimal
+  description: String
+  website: String
+  employees: Int
+  foundedYear: Int
+  headquarters: String
+  
+  # Financial data
+  marketData: MarketData
+  financialMetrics: CompanyFinancials
+  
+  # Related valuations
+  recentValuations: [Valuation!]!
+}
+
+type CompanyFinancials {
+  revenue: Decimal
+  revenueGrowth: Float
+  ebitda: Decimal
+  netIncome: Decimal
+  totalAssets: Decimal
+  totalDebt: Decimal
+  shareholders Equity: Decimal
+  lastReportedDate: Date!
+}
+
+type PeerGroupData {
+  criteria: JSON!
+  peers: [MarketData!]!
+  summaryStatistics: PeerGroupStatistics!
+  generatedAt: DateTime!
+}
+
+type PeerGroupStatistics {
+  count: Int!
+  medianMarketCap: Decimal!
+  medianPeRatio: Float!
+  medianEvEbitda: Float!
+  medianRevenueGrowth: Float!
+  correlationMatrix: JSON!
+}
+
+type IndustryBenchmarks {
+  industrySector: IndustrySector!
+  timePeriod: String!
+  valuationMultiples: MultipleBenchmarks!
+  growthMetrics: GrowthBenchmarks!
+  sampleSize: Int!
+  dataSource: String!
+  generatedAt: DateTime!
+}
+
+type MultipleBenchmarks {
+  peRatio: BenchmarkStatistics!
+  evEbitda: BenchmarkStatistics!
+  priceSales: BenchmarkStatistics!
+  priceToBook: BenchmarkStatistics!
+  evRevenue: BenchmarkStatistics!
+}
+
+type GrowthBenchmarks {
+  revenueGrowth: BenchmarkStatistics!
+  ebitdaGrowth: BenchmarkStatistics!
+  earningsGrowth: BenchmarkStatistics!
+}
+
+type BenchmarkStatistics {
+  median: Float!
+  mean: Float!
+  percentile25: Float!
+  percentile75: Float!
+  min: Float!
+  max: Float!
+  stdDev: Float!
+}
+
+type Webhook {
+  id: ID!
+  url: String!
+  events: [WebhookEvent!]!
+  active: Boolean!
+  createdAt: DateTime!
+  lastDelivery: DateTime
+  deliveryStats: WebhookDeliveryStats!
+}
+
+type WebhookDeliveryStats {
+  totalDeliveries: Int!
+  successfulDeliveries: Int!
+  failedDeliveries: Int!
+  lastSuccess: DateTime
+  lastFailure: DateTime
+  successRate: Float!
+}
+
+# ===== CONNECTION TYPES =====
+
+type ValuationConnection {
+  edges: [ValuationEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ValuationEdge {
+  node: Valuation!
+  cursor: String!
+}
+
+type DocumentConnection {
+  edges: [DocumentEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type DocumentEdge {
+  node: Document!
+  cursor: String!
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+# ===== RESPONSE TYPES =====
+
+type ValuationResponse {
+  jobId: ID!
+  status: ValuationStatus!
+  estimatedCompletionTime: String!
+  createdAt: DateTime!
+  pollingUrl: String!
+  webhookUrl: String
+}
+
+type DocumentUploadResponse {
+  jobId: ID!
+  status: ProcessingStatus!
+  fileUrl: String!
+  documentType: DocumentType!
+  estimatedCompletionTime: String!
+  createdAt: DateTime!
+  pollingUrl: String!
+}
+
+type ReportGenerationResponse {
+  jobId: ID!
+  status: String!
+  downloadUrl: String
+  expiresAt: DateTime!
+  estimatedCompletion: DateTime!
+}
+
+type DataExportRequest {
+  requestId: ID!
+  status: String!
+  format: String!
+  estimatedCompletion: DateTime!
+  downloadUrl: String
+  expiresAt: DateTime!
+}
+
+# ===== SUBSCRIPTION UPDATE TYPES =====
+
+type ValuationStatusUpdate {
+  valuationId: ID!
+  status: ValuationStatus!
+  progress: Int!
+  currentStage: ProcessingStage!
+  stageDescription: String
+  estimatedCompletion: DateTime
+  result: ValuationResult
+  error: String
+}
+
+type DocumentProcessingUpdate {
+  jobId: ID!
+  status: ProcessingStatus!
+  progress: Int!
+  extractionResult: ExtractionResult
+  error: String
+}
+
+type MarketDataUpdate {
+  ticker: String!
+  price: Decimal!
+  volume: Int!
+  changePercent: Float!
+  timestamp: DateTime!
+}
+
+type UserNotification {
+  id: ID!
+  type: String!
+  title: String!
+  message: String!
+  data: JSON
+  createdAt: DateTime!
+  read: Boolean!
+}
+
+type SystemStatusUpdate {
+  component: String!
+  status: String!
+  message: String!
+  timestamp: DateTime!
+}
+
+# ===== ANALYTICS TYPES =====
+
+type ValuationAnalytics {
+  totalValuations: Int!
+  completedValuations: Int!
+  averageProcessingTime: Float!
+  industryBreakdown: [IndustryCount!]!
+  averageTargetPrice: Decimal!
+  priceRangeDistribution: [PriceRangeBucket!]!
+  riskScoreDistribution: [RiskScoreBucket!]!
+  monthlyTrends: [MonthlyTrend!]!
+}
+
+type IndustryCount {
+  industry: IndustrySector!
+  count: Int!
+  percentage: Float!
+}
+
+type PriceRangeBucket {
+  rangeMin: Decimal!
+  rangeMax: Decimal!
+  count: Int!
+  percentage: Float!
+}
+
+type RiskScoreBucket {
+  scoreMin: Float!
+  scoreMax: Float!
+  count: Int!
+  percentage: Float!
+}
+
+type MonthlyTrend {
+  month: String!
+  valuations: Int!
+  averagePrice: Decimal!
+  averageRiskScore: Float!
+}
+
+# ===== PROCESSING STAGE TYPES =====
+
+type ProcessingStageInfo {
+  stage: ProcessingStage!
+  status: String!
+  progress: Int!
+  startedAt: DateTime
+  completedAt: DateTime
+  duration: Int
+  error: String
+  details: JSON
+}
+
+# ===== HEALTH CHECK TYPES =====
+
+type HealthStatus {
+  status: String!
+  timestamp: DateTime!
+  version: String!
+  services: [ServiceHealth!]!
+  performance: PerformanceMetrics!
+}
+
+type ServiceHealth {
+  name: String!
+  status: String!
+  responseTime: Int
+  lastChecked: DateTime!
+  details: JSON
+}
+
+type PerformanceMetrics {
+  averageResponseTime: Int!
+  requestsPerSecond: Float!
+  errorRate: Float!
+  cacheHitRate: Float!
+  uptime: Float!
+}
+
+# ===== DIRECTIVE DEFINITIONS =====
+
+"""
+Marks a field as requiring specific permissions
+"""
+directive @auth(
+  requires: [String!]
+) on FIELD_DEFINITION
+
+"""
+Marks a field as cacheable with TTL
+"""
+directive @cacheControl(
+  maxAge: Int
+  scope: String
+) on FIELD_DEFINITION | OBJECT
+
+"""
+Marks a field as rate limited
+"""
+directive @rateLimit(
+  max: Int!
+  window: Int!
+) on FIELD_DEFINITION
+
+"""
+Marks a field as deprecated
+"""
+directive @deprecated(
+  reason: String = "No longer supported"
+) on FIELD_DEFINITION | ENUM_VALUE
+
+# Apply caching and rate limiting to key fields
+extend type Query {
+  marketData: MarketData @cacheControl(maxAge: 300) @rateLimit(max: 100, window: 3600)
+  industryBenchmarks: IndustryBenchmarks @cacheControl(maxAge: 3600) @rateLimit(max: 50, window: 3600)
+}
+
+extend type Mutation {
+  createValuation: ValuationResponse @auth(requires: ["write:valuations"]) @rateLimit(max: 10, window: 3600)
+  uploadDocument: DocumentUploadResponse @auth(requires: ["write:documents"]) @rateLimit(max: 20, window: 3600)
+}

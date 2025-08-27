@@ -1,0 +1,313 @@
+# Prometheus Alerting Rules for IPO Valuation Platform
+groups:
+  # Application Health Alerts
+  - name: application.health
+    rules:
+      - alert: ApplicationDown
+        expr: up{job="uprez-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: backend
+          team: devops
+        annotations:
+          summary: "Backend application is down"
+          description: "Backend service {{ $labels.instance }} has been down for more than 2 minutes"
+          runbook_url: "https://runbooks.uprez.com/application-down"
+          dashboard_url: "https://grafana.uprez.com/d/app-health"
+
+      - alert: FrontendDown
+        expr: up{job="uprez-frontend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: frontend
+          team: devops
+        annotations:
+          summary: "Frontend application is down"
+          description: "Frontend service {{ $labels.instance }} has been down for more than 2 minutes"
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: "{{ $labels.service }}"
+          team: backend
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for service {{ $labels.service }}"
+
+      - alert: CriticalErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.10
+        for: 3m
+        labels:
+          severity: critical
+          service: "{{ $labels.service }}"
+          team: backend
+        annotations:
+          summary: "Critical error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for service {{ $labels.service }}"
+
+  # Performance Alerts
+  - name: performance
+    rules:
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 10m
+        labels:
+          severity: warning
+          service: "{{ $labels.service }}"
+          team: backend
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }}s for {{ $labels.service }}"
+
+      - alert: CriticalResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: critical
+          service: "{{ $labels.service }}"
+          team: backend
+        annotations:
+          summary: "Critical response time detected"
+          description: "95th percentile response time is {{ $value }}s for {{ $labels.service }}"
+
+      - alert: HighCPUUsage
+        expr: rate(container_cpu_usage_seconds_total{pod=~".*uprez-valuation.*"}[5m]) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          service: kubernetes
+          team: platform
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value | humanizePercentage }} for pod {{ $labels.pod }}"
+
+      - alert: HighMemoryUsage
+        expr: container_memory_usage_bytes{pod=~".*uprez-valuation.*"} / container_spec_memory_limit_bytes > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          service: kubernetes
+          team: platform
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value | humanizePercentage }} for pod {{ $labels.pod }}"
+
+  # Database Alerts
+  - name: database
+    rules:
+      - alert: DatabaseConnectionsHigh
+        expr: pg_stat_database_numbackends / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: database
+          team: backend
+        annotations:
+          summary: "Database connections high"
+          description: "Database connections are at {{ $value | humanizePercentage }} of maximum"
+
+      - alert: DatabaseReplicationLag
+        expr: pg_replication_lag > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: database
+          team: backend
+        annotations:
+          summary: "Database replication lag detected"
+          description: "Replication lag is {{ $value }} seconds"
+
+      - alert: DatabaseSlowQueries
+        expr: rate(pg_stat_statements_mean_time_ms[5m]) > 1000
+        for: 10m
+        labels:
+          severity: warning
+          service: database
+          team: backend
+        annotations:
+          summary: "Slow database queries detected"
+          description: "Average query time is {{ $value }}ms"
+
+  # Infrastructure Alerts  
+  - name: infrastructure
+    rules:
+      - alert: KubernetesNodeNotReady
+        expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: kubernetes
+          team: platform
+        annotations:
+          summary: "Kubernetes node not ready"
+          description: "Node {{ $labels.node }} has been not ready for more than 5 minutes"
+
+      - alert: KubernetesPodCrashLooping
+        expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: kubernetes
+          team: platform
+        annotations:
+          summary: "Pod is crash looping"
+          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is crash looping"
+
+      - alert: KubernetesPersistentVolumeUsageHigh
+        expr: kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: kubernetes
+          team: platform
+        annotations:
+          summary: "Persistent volume usage high"
+          description: "PV usage is {{ $value | humanizePercentage }} for volume {{ $labels.persistentvolumeclaim }}"
+
+      - alert: IngressControllerDown
+        expr: up{job="nginx-ingress-controller"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: ingress
+          team: platform
+        annotations:
+          summary: "Ingress controller is down"
+          description: "Ingress controller {{ $labels.instance }} has been down for more than 2 minutes"
+
+  # Security Alerts
+  - name: security
+    rules:
+      - alert: UnauthorizedAPIAccess
+        expr: increase(http_requests_total{status="401"}[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          service: security
+          team: security
+        annotations:
+          summary: "High number of unauthorized API requests"
+          description: "{{ $value }} unauthorized requests detected in the last 5 minutes"
+
+      - alert: PotentialDDoSAttack
+        expr: rate(http_requests_total[1m]) > 1000
+        for: 2m
+        labels:
+          severity: critical
+          service: security
+          team: security
+        annotations:
+          summary: "Potential DDoS attack detected"
+          description: "Request rate is {{ $value }} requests/second, indicating possible DDoS attack"
+
+      - alert: CertificateExpiringSoon
+        expr: (x509_cert_not_after - time()) / 86400 < 7
+        for: 1h
+        labels:
+          severity: warning
+          service: security
+          team: platform
+        annotations:
+          summary: "TLS certificate expiring soon"
+          description: "Certificate {{ $labels.subject }} expires in {{ $value }} days"
+
+  # Business Logic Alerts
+  - name: business.logic
+    rules:
+      - alert: ValuationProcessingError
+        expr: increase(valuation_processing_errors_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: valuation
+          team: backend
+        annotations:
+          summary: "High valuation processing errors"
+          description: "{{ $value }} valuation processing errors in the last 5 minutes"
+
+      - alert: DataSourceUnavailable
+        expr: data_source_health{source=~"alpha_vantage|yahoo_finance"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          service: data-integration
+          team: backend
+        annotations:
+          summary: "External data source unavailable"
+          description: "Data source {{ $labels.source }} is unavailable"
+
+      - alert: HighDataProcessingLatency
+        expr: histogram_quantile(0.95, rate(data_processing_duration_seconds_bucket[5m])) > 30
+        for: 10m
+        labels:
+          severity: warning
+          service: data-processing
+          team: backend
+        annotations:
+          summary: "High data processing latency"
+          description: "95th percentile processing time is {{ $value }}s"
+
+  # Cache Alerts
+  - name: cache
+    rules:
+      - alert: RedisDown
+        expr: up{job="redis-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: cache
+          team: backend
+        annotations:
+          summary: "Redis is down"
+          description: "Redis instance {{ $labels.instance }} has been down for more than 2 minutes"
+
+      - alert: RedisMemoryUsageHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: cache
+          team: backend
+        annotations:
+          summary: "Redis memory usage high"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}"
+
+      - alert: CacheHitRateLow
+        expr: redis_keyspace_hits_total / (redis_keyspace_hits_total + redis_keyspace_misses_total) < 0.8
+        for: 10m
+        labels:
+          severity: warning
+          service: cache
+          team: backend
+        annotations:
+          summary: "Low cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }}"
+
+  # SLO/SLI Alerts
+  - name: slo.sli
+    rules:
+      - alert: SLOErrorBudgetExhausted
+        expr: (1 - (uprez:availability:5m)) > 0.001  # 99.9% availability SLO
+        for: 1m
+        labels:
+          severity: critical
+          service: slo
+          team: sre
+        annotations:
+          summary: "SLO error budget exhausted"
+          description: "Service availability is below 99.9% SLO target"
+
+      - alert: SLOLatencyBudgetExhausted
+        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: slo
+          team: sre
+        annotations:
+          summary: "SLO latency budget exhausted"
+          description: "99th percentile latency exceeds 1 second SLO target"

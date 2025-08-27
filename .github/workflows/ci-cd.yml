@@ -1,0 +1,478 @@
+# IPO Valuation Platform - Comprehensive CI/CD Pipeline
+# GitHub Actions workflow for automated testing, building, and deployment
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.gitignore'
+  pull_request:
+    branches: [main, develop]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.gitignore'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - prod
+      skip_tests:
+        description: 'Skip tests'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: gcr.io
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  SERVICE_NAME: uprez-valuation
+  REGION: us-central1
+
+jobs:
+  # Code Quality and Security Checks
+  quality:
+    name: Code Quality & Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci --prefer-offline --no-audit
+          cd src/frontend && npm ci --prefer-offline --no-audit
+          cd ../backend && npm ci --prefer-offline --no-audit
+          cd ../admin && npm ci --prefer-offline --no-audit
+
+      - name: Run ESLint
+        run: |
+          npm run lint
+          cd src/frontend && npm run lint
+          cd ../backend && npm run lint
+          cd ../admin && npm run lint
+
+      - name: Run Prettier check
+        run: |
+          npm run format:check
+          cd src/frontend && npm run format:check
+          cd ../backend && npm run format:check
+
+      - name: Type checking
+        run: |
+          cd src/frontend && npm run type-check
+          cd ../backend && npm run type-check
+
+      - name: Security audit
+        run: |
+          npm audit --audit-level high
+          cd src/frontend && npm audit --audit-level high
+          cd ../backend && npm audit --audit-level high
+
+      - name: CodeQL Analysis
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # Test Suite
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: ${{ !inputs.skip_tests }}
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    strategy:
+      matrix:
+        node-version: [18, 20]
+        service: [frontend, backend, admin]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          cd src/${{ matrix.service }}
+          npm ci --prefer-offline --no-audit
+
+      - name: Run unit tests
+        run: |
+          cd src/${{ matrix.service }}
+          npm run test:unit -- --coverage --watchAll=false
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+
+      - name: Run integration tests
+        if: matrix.service == 'backend'
+        run: |
+          cd src/backend
+          npm run test:integration
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+
+      - name: Run E2E tests
+        if: matrix.service == 'frontend'
+        run: |
+          cd src/frontend
+          npm run test:e2e
+        env:
+          CYPRESS_baseUrl: http://localhost:3000
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./src/${{ matrix.service }}/coverage/lcov.info
+          flags: ${{ matrix.service }}
+          name: codecov-${{ matrix.service }}
+          fail_ci_if_error: true
+
+  # Build Docker Images
+  build:
+    name: Build Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [quality]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    strategy:
+      matrix:
+        service: [frontend, backend, admin]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}-${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src/${{ matrix.service }}
+          file: ./infrastructure/docker/Dockerfile.${{ matrix.service }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NODE_ENV=production
+            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ github.ref_name }}
+
+  # Security Scanning
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    strategy:
+      matrix:
+        service: [frontend, backend, admin]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}-${{ matrix.service }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # Deploy to Staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [test, build, security]
+    if: (github.ref == 'refs/heads/develop' && github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
+    environment: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials uprez-valuation-staging-cluster \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }}
+
+      - name: Deploy to staging
+        run: |
+          # Update Kubernetes manifests with new image tags
+          cd infrastructure/kubernetes/overlays/staging
+          
+          # Update image tags in kustomization.yaml
+          kustomize edit set image \
+            frontend-image=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}-frontend:${{ github.sha }} \
+            backend-image=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}-backend:${{ github.sha }} \
+            admin-image=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}-admin:${{ github.sha }}
+          
+          # Apply to cluster
+          kubectl apply -k .
+          
+          # Wait for rollout
+          kubectl rollout status deployment/frontend-deployment -n uprez-valuation-staging
+          kubectl rollout status deployment/backend-deployment -n uprez-valuation-staging
+          kubectl rollout status deployment/admin-deployment -n uprez-valuation-staging
+
+      - name: Run smoke tests
+        run: |
+          cd tests/smoke
+          npm ci
+          npm run test:staging
+        env:
+          STAGING_URL: https://staging.uprez-valuation.com
+
+      - name: Notify deployment
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              attachments: [{
+                color: 'good',
+                text: `Staging deployment successful! :rocket:\nCommit: ${process.env.AS_COMMIT}\nBranch: ${process.env.AS_REF}`
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: success()
+
+  # Deploy to Production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [test, build, security]
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && inputs.environment == 'prod')
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials uprez-valuation-prod-cluster \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }}
+
+      - name: Create deployment backup
+        run: |
+          kubectl get deployment -o yaml -n uprez-valuation-prod > deployment-backup-$(date +%Y%m%d-%H%M%S).yaml
+
+      - name: Blue-Green deployment
+        run: |
+          cd infrastructure/kubernetes/overlays/prod
+          
+          # Update image tags
+          kustomize edit set image \
+            frontend-image=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}-frontend:${{ github.sha }} \
+            backend-image=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}-backend:${{ github.sha }} \
+            admin-image=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}-admin:${{ github.sha }}
+          
+          # Deploy to green environment
+          kubectl apply -k . --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Wait for rollout
+          kubectl rollout status deployment/frontend-deployment -n uprez-valuation-prod --timeout=600s
+          kubectl rollout status deployment/backend-deployment -n uprez-valuation-prod --timeout=600s
+          kubectl rollout status deployment/admin-deployment -n uprez-valuation-prod --timeout=600s
+
+      - name: Run production health checks
+        run: |
+          # Wait for services to be ready
+          sleep 30
+          
+          # Health checks
+          kubectl exec deployment/backend-deployment -n uprez-valuation-prod -- curl -f http://localhost:8000/health
+          
+          # Run comprehensive health check script
+          cd scripts
+          ./health-check.sh production
+
+      - name: Run production smoke tests
+        run: |
+          cd tests/smoke
+          npm ci
+          npm run test:production
+        env:
+          PRODUCTION_URL: https://uprez-valuation.com
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed, rolling back..."
+          kubectl rollout undo deployment/frontend-deployment -n uprez-valuation-prod
+          kubectl rollout undo deployment/backend-deployment -n uprez-valuation-prod
+          kubectl rollout undo deployment/admin-deployment -n uprez-valuation-prod
+
+      - name: Create GitHub release
+        if: success() && github.ref == 'refs/heads/main'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ github.run_number }}
+          release_name: Release v${{ github.run_number }}
+          body: |
+            Production deployment successful!
+            
+            **Changes in this release:**
+            ${{ github.event.head_commit.message }}
+            
+            **Deployed services:**
+            - Frontend: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}-frontend:${{ github.sha }}
+            - Backend: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}-backend:${{ github.sha }}
+            - Admin: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}-admin:${{ github.sha }}
+          draft: false
+          prerelease: false
+
+      - name: Notify production deployment
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              attachments: [{
+                color: 'good',
+                text: `Production deployment successful! :tada:\nVersion: v${process.env.GITHUB_RUN_NUMBER}\nCommit: ${process.env.AS_COMMIT}`
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: success()
+
+  # Cleanup
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [deploy-staging, deploy-production]
+    if: always()
+
+    steps:
+      - name: Cleanup old Docker images
+        run: |
+          # Keep only last 10 images
+          gcloud container images list-tags ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}-frontend \
+            --limit=999 --sort-by=TIMESTAMP --format="get(digest)" | tail -n +11 | \
+            xargs -I {} gcloud container images delete ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}-frontend@{} --quiet

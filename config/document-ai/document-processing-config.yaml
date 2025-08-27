@@ -1,0 +1,331 @@
+# Document AI Configuration for IPO Valuation Platform
+
+# Document AI Processors Configuration
+processors:
+  # General Document OCR Processor
+  general_ocr:
+    processor_type: "OCR_PROCESSOR"
+    display_name: "IPO Document OCR"
+    location: "us"
+    processor_version: "rc"  # Release candidate for latest features
+    
+  # Form Parser for Financial Forms
+  form_parser:
+    processor_type: "FORM_PARSER_PROCESSOR"
+    display_name: "Financial Form Parser"
+    location: "us"
+    processor_version: "stable"
+    
+  # Specialized Document Processors
+  prospectus_processor:
+    processor_type: "SPECIALIZED_PARSER"
+    display_name: "IPO Prospectus Parser"
+    location: "us"
+    processor_version: "rc"
+    schema_config:
+      entities:
+        - type: "company_name"
+          display_name: "Company Name"
+          description: "Legal name of the company going public"
+          
+        - type: "ipo_date"
+          display_name: "IPO Date"
+          description: "Expected or actual IPO date"
+          
+        - type: "share_price_range"
+          display_name: "Share Price Range"
+          description: "Expected share price range"
+          
+        - type: "shares_offered"
+          display_name: "Shares Offered"
+          description: "Number of shares being offered"
+          
+        - type: "use_of_proceeds"
+          display_name: "Use of Proceeds"
+          description: "Intended use of IPO proceeds"
+          
+        - type: "risk_factors"
+          display_name: "Risk Factors"
+          description: "Key risk factors identified"
+          
+        - type: "financial_highlights"
+          display_name: "Financial Highlights"
+          description: "Key financial metrics and performance"
+          
+        - type: "competitive_position"
+          display_name: "Competitive Position"
+          description: "Company's competitive advantages"
+
+  # Financial Statement Processor
+  financial_statement_processor:
+    processor_type: "SPECIALIZED_PARSER"
+    display_name: "Financial Statement Parser"
+    location: "us"
+    processor_version: "stable"
+    schema_config:
+      entities:
+        - type: "revenue"
+          display_name: "Revenue"
+          description: "Total revenue figures"
+          
+        - type: "net_income"
+          display_name: "Net Income"
+          description: "Net income/loss figures"
+          
+        - type: "total_assets"
+          display_name: "Total Assets"
+          description: "Total assets value"
+          
+        - type: "total_liabilities"
+          display_name: "Total Liabilities"
+          description: "Total liabilities amount"
+          
+        - type: "cash_flow_operations"
+          display_name: "Operating Cash Flow"
+          description: "Cash flow from operations"
+          
+        - type: "cash_flow_investing"
+          display_name: "Investing Cash Flow"
+          description: "Cash flow from investing activities"
+          
+        - type: "cash_flow_financing"
+          display_name: "Financing Cash Flow"
+          description: "Cash flow from financing activities"
+          
+        - type: "earnings_per_share"
+          display_name: "Earnings Per Share"
+          description: "Basic and diluted EPS"
+
+# Document Classification Configuration
+classification:
+  document_types:
+    - name: "prospectus"
+      confidence_threshold: 0.85
+      keywords:
+        - "initial public offering"
+        - "securities and exchange commission"
+        - "use of proceeds"
+        - "risk factors"
+        - "underwriting"
+      
+    - name: "financial_statement"
+      confidence_threshold: 0.90
+      keywords:
+        - "balance sheet"
+        - "income statement"
+        - "cash flow statement"
+        - "statement of operations"
+        - "consolidated financial statements"
+        
+    - name: "annual_report"
+      confidence_threshold: 0.85
+      keywords:
+        - "form 10-k"
+        - "annual report"
+        - "management discussion"
+        - "auditor's report"
+        
+    - name: "quarterly_report"
+      confidence_threshold: 0.80
+      keywords:
+        - "form 10-q"
+        - "quarterly report"
+        - "three months ended"
+        - "nine months ended"
+        
+    - name: "proxy_statement"
+      confidence_threshold: 0.85
+      keywords:
+        - "proxy statement"
+        - "annual meeting"
+        - "executive compensation"
+        - "board of directors"
+
+# Processing Pipeline Configuration
+pipeline:
+  document_ingestion:
+    supported_formats:
+      - "pdf"
+      - "docx"
+      - "html"
+      - "txt"
+    max_file_size_mb: 50
+    batch_size: 10
+    
+  pre_processing:
+    image_enhancement: true
+    orientation_correction: true
+    noise_reduction: true
+    
+  ocr_configuration:
+    language_codes: ["en", "es", "fr", "de", "zh"]
+    enable_text_detection_confidence_score: true
+    enable_image_quality_scores: true
+    
+  post_processing:
+    confidence_threshold: 0.7
+    enable_entity_linking: true
+    enable_sentiment_analysis: true
+
+# Natural Language Processing Integration
+nlp_integration:
+  sentiment_analysis:
+    enable: true
+    confidence_threshold: 0.75
+    languages: ["en"]
+    
+  entity_extraction:
+    enable: true
+    types:
+      - "PERSON"
+      - "ORGANIZATION" 
+      - "LOCATION"
+      - "DATE"
+      - "MONEY"
+      - "PERCENT"
+      
+  syntax_analysis:
+    enable: true
+    extract_tokens: true
+    extract_entities: true
+    extract_document_sentiment: true
+    
+  translation:
+    enable: true
+    target_language: "en"
+    source_language: "auto"
+
+# Cloud Vision API Integration
+vision_api:
+  text_detection:
+    enable: true
+    feature_type: "DOCUMENT_TEXT_DETECTION"
+    
+  table_detection:
+    enable: true
+    confidence_threshold: 0.8
+    
+  chart_analysis:
+    enable: true
+    types:
+      - "bar_chart"
+      - "line_chart"
+      - "pie_chart"
+      - "financial_chart"
+
+# Output Configuration
+output:
+  formats:
+    - "json"
+    - "csv" 
+    - "bigquery"
+    
+  storage:
+    bucket: "ipo-valuation-processed-docs"
+    path_pattern: "processed/{year}/{month}/{day}/{document_type}/{timestamp}/"
+    
+  bigquery_integration:
+    dataset: "ipo_valuation.document_data"
+    tables:
+      - name: "processed_documents"
+        schema:
+          - name: "document_id"
+            type: "STRING"
+            mode: "REQUIRED"
+          - name: "document_type"
+            type: "STRING" 
+            mode: "REQUIRED"
+          - name: "processing_timestamp"
+            type: "TIMESTAMP"
+            mode: "REQUIRED"
+          - name: "extracted_text"
+            type: "STRING"
+            mode: "NULLABLE"
+          - name: "entities"
+            type: "RECORD"
+            mode: "REPEATED"
+            fields:
+              - name: "type"
+                type: "STRING"
+              - name: "value"
+                type: "STRING"
+              - name: "confidence"
+                type: "FLOAT"
+          - name: "sentiment"
+            type: "RECORD"
+            mode: "NULLABLE"
+            fields:
+              - name: "score"
+                type: "FLOAT"
+              - name: "magnitude"
+                type: "FLOAT"
+          - name: "metadata"
+            type: "JSON"
+            mode: "NULLABLE"
+
+# Monitoring and Alerting
+monitoring:
+  processing_metrics:
+    - "documents_processed_per_hour"
+    - "processing_latency_p95"
+    - "error_rate"
+    - "confidence_score_distribution"
+    
+  alerts:
+    - name: "high_error_rate"
+      condition: "error_rate > 0.05"
+      notification_channel: "email"
+      
+    - name: "low_confidence_documents"
+      condition: "avg_confidence < 0.7"
+      notification_channel: "slack"
+      
+    - name: "processing_backlog"
+      condition: "queue_depth > 100"
+      notification_channel: "pager"
+
+# Security and Compliance
+security:
+  data_encryption:
+    in_transit: true
+    at_rest: true
+    kms_key: "projects/PROJECT_ID/locations/us/keyRings/ipo-docs/cryptoKeys/doc-processor"
+    
+  access_control:
+    service_account: "doc-processor@PROJECT_ID.iam.gserviceaccount.com"
+    required_roles:
+      - "roles/documentai.apiUser"
+      - "roles/storage.objectViewer"
+      - "roles/bigquery.dataEditor"
+      
+  data_retention:
+    processed_documents: "7_years"
+    processing_logs: "1_year"
+    error_logs: "2_years"
+    
+  compliance:
+    gdpr_compliant: true
+    ccpa_compliant: true
+    sox_compliant: true
+    pci_dss_level: "not_applicable"
+
+# Performance Optimization
+optimization:
+  caching:
+    enable: true
+    ttl_hours: 24
+    cache_key_pattern: "{document_hash}_{processor_version}"
+    
+  batch_processing:
+    enable: true
+    batch_size: 20
+    max_wait_time_seconds: 300
+    
+  parallel_processing:
+    enable: true
+    max_concurrent_requests: 10
+    
+  cost_optimization:
+    use_batch_processing: true
+    enable_auto_ml_confidence_thresholds: true
+    optimize_for_accuracy: true  # vs optimize_for_speed

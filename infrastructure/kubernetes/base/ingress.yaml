@@ -1,0 +1,254 @@
+# Main Application Ingress with Google Cloud Load Balancer
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: uprez-valuation-ingress
+  namespace: uprez-valuation
+  labels:
+    app.kubernetes.io/name: uprez-valuation
+    app.kubernetes.io/component: ingress
+  annotations:
+    # Google Cloud Load Balancer
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.global-static-ip-name: "uprez-valuation-ip"
+    
+    # SSL Configuration
+    ingress.gcp.kubernetes.io/managed-certificates: "uprez-valuation-ssl-cert"
+    kubernetes.io/ingress.allow-http: "false"
+    
+    # Cloud Armor Security Policy
+    cloud.google.com/armor-config: '{"uprez-valuation-security-policy": "uprez-valuation-security-policy"}'
+    
+    # Backend Configuration
+    cloud.google.com/backend-config: '{"default": "backend-config"}'
+    
+    # Load Balancer Configuration
+    ingress.gcp.kubernetes.io/frontend-config: "frontend-config"
+    
+    # Rate Limiting
+    nginx.ingress.kubernetes.io/rate-limit-connections: "20"
+    nginx.ingress.kubernetes.io/rate-limit-rps: "10"
+    
+    # Security Headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header X-Frame-Options DENY always;
+      add_header X-Content-Type-Options nosniff always;
+      add_header X-XSS-Protection "1; mode=block" always;
+      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' wss: https:; frame-ancestors 'none';" always;
+spec:
+  tls:
+  - secretName: uprez-valuation-tls
+    hosts:
+    - uprez-valuation.com
+    - www.uprez-valuation.com
+    - admin.uprez-valuation.com
+  rules:
+  # Main Application
+  - host: uprez-valuation.com
+    http:
+      paths:
+      - path: /api/*
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-service
+            port:
+              number: 8000
+      - path: /ws/*
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-service
+            port:
+              number: 8000
+      - path: /*
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend-service
+            port:
+              number: 80
+  
+  # WWW Redirect (handled by frontend)
+  - host: www.uprez-valuation.com
+    http:
+      paths:
+      - path: /*
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend-service
+            port:
+              number: 80
+  
+  # Admin Dashboard
+  - host: admin.uprez-valuation.com
+    http:
+      paths:
+      - path: /api/*
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-service
+            port:
+              number: 8000
+      - path: /*
+        pathType: Prefix
+        backend:
+          service:
+            name: admin-service
+            port:
+              number: 80
+
+---
+# Managed SSL Certificate
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: uprez-valuation-ssl-cert
+  namespace: uprez-valuation
+  labels:
+    app.kubernetes.io/name: uprez-valuation
+    app.kubernetes.io/component: ssl-certificate
+spec:
+  domains:
+    - uprez-valuation.com
+    - www.uprez-valuation.com
+    - admin.uprez-valuation.com
+
+---
+# Backend Configuration for Google Cloud Load Balancer
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: backend-config
+  namespace: uprez-valuation
+  labels:
+    app.kubernetes.io/name: uprez-valuation
+    app.kubernetes.io/component: backend-config
+spec:
+  # Health Check Configuration
+  healthCheck:
+    checkIntervalSec: 10
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    type: HTTP
+    requestPath: /health
+    port: 8000
+  
+  # Connection Draining
+  connectionDraining:
+    drainingTimeoutSec: 60
+  
+  # Session Affinity
+  sessionAffinity:
+    affinityType: "CLIENT_IP"
+    affinityCookieTtlSec: 3600
+  
+  # Timeout Settings
+  timeoutSec: 30
+  
+  # Custom Request Headers
+  customRequestHeaders:
+    headers:
+    - "X-Forwarded-Proto:https"
+    - "X-Client-Region:{client_region}"
+    - "X-Client-City:{client_city}"
+
+---
+# Frontend Configuration for Google Cloud Load Balancer
+apiVersion: networking.gke.io/v1
+kind: FrontendConfig
+metadata:
+  name: frontend-config
+  namespace: uprez-valuation
+  labels:
+    app.kubernetes.io/name: uprez-valuation
+    app.kubernetes.io/component: frontend-config
+spec:
+  # Redirect HTTP to HTTPS
+  redirectToHttps:
+    enabled: true
+    responseCodeName: MOVED_PERMANENTLY_DEFAULT
+  
+  # SSL Policy
+  sslPolicy: "modern-tls-policy"
+
+---
+# Network Policy for Ingress Traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-network-policy
+  namespace: uprez-valuation
+  labels:
+    app.kubernetes.io/name: uprez-valuation
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow ingress from Google Cloud Load Balancer
+  - from:
+    - ipBlock:
+        cidr: 130.211.0.0/22
+    - ipBlock:
+        cidr: 35.191.0.0/16
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 80
+  
+  # Allow internal communication
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: uprez-valuation
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 5432
+    - protocol: TCP
+      port: 6379
+  
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  
+  # Allow HTTPS outbound for API calls
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  
+  # Allow database connections
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: database
+    ports:
+    - protocol: TCP
+      port: 5432
+  
+  # Allow Redis connections
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: cache
+    ports:
+    - protocol: TCP
+      port: 6379

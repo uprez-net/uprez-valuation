@@ -1,0 +1,654 @@
+{
+  "collections": {
+    "workspaces": {
+      "description": "Real-time collaboration workspaces for valuation models",
+      "document_structure": {
+        "workspace_id": {
+          "type": "string",
+          "description": "UUID for the workspace"
+        },
+        "valuation_id": {
+          "type": "string", 
+          "description": "Associated valuation UUID"
+        },
+        "company_id": {
+          "type": "string",
+          "description": "Company being valued UUID"
+        },
+        "organization_id": {
+          "type": "string",
+          "description": "Organization that owns the workspace"
+        },
+        "name": {
+          "type": "string",
+          "description": "Workspace display name"
+        },
+        "description": {
+          "type": "string",
+          "description": "Workspace description"
+        },
+        "model_type": {
+          "type": "string",
+          "enum": ["dcf", "comparable_company", "precedent_transaction", "monte_carlo"],
+          "description": "Type of valuation model"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "active", "review", "completed", "archived"],
+          "description": "Workspace status"
+        },
+        "permissions": {
+          "type": "object",
+          "description": "Workspace access permissions",
+          "properties": {
+            "public_read": {"type": "boolean"},
+            "public_write": {"type": "boolean"},
+            "organization_read": {"type": "boolean"},
+            "organization_write": {"type": "boolean"},
+            "invited_users": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "user_id": {"type": "string"},
+                  "email": {"type": "string"},
+                  "role": {"type": "string", "enum": ["viewer", "editor", "reviewer", "owner"]},
+                  "invited_at": {"type": "timestamp"},
+                  "invited_by": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "active_users": {
+          "type": "array",
+          "description": "Currently active users in the workspace",
+          "items": {
+            "type": "object",
+            "properties": {
+              "user_id": {"type": "string"},
+              "display_name": {"type": "string"},
+              "avatar_url": {"type": "string"},
+              "joined_at": {"type": "timestamp"},
+              "last_activity": {"type": "timestamp"},
+              "cursor_position": {
+                "type": "object",
+                "properties": {
+                  "section": {"type": "string"},
+                  "field": {"type": "string"},
+                  "cell": {"type": "string"}
+                }
+              },
+              "current_action": {
+                "type": "string",
+                "enum": ["viewing", "editing", "commenting", "reviewing"]
+              }
+            }
+          }
+        },
+        "model_data": {
+          "type": "object",
+          "description": "Current state of the valuation model",
+          "properties": {
+            "version": {"type": "number"},
+            "last_modified": {"type": "timestamp"},
+            "last_modified_by": {"type": "string"},
+            "sections": {
+              "type": "object",
+              "description": "Model sections with real-time data",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "locked_by": {"type": "string"},
+                  "locked_at": {"type": "timestamp"},
+                  "data": {"type": "object"},
+                  "last_modified": {"type": "timestamp"},
+                  "last_modified_by": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "created_at": {"type": "timestamp"},
+        "updated_at": {"type": "timestamp"},
+        "created_by": {"type": "string"}
+      },
+      "indexes": [
+        {"fields": ["organization_id", "status"]},
+        {"fields": ["valuation_id"]},
+        {"fields": ["company_id"]},
+        {"fields": ["created_at"], "order": "desc"}
+      ]
+    },
+
+    "workspace_comments": {
+      "description": "Comments and discussions within workspaces",
+      "document_structure": {
+        "comment_id": {"type": "string"},
+        "workspace_id": {"type": "string"},
+        "parent_comment_id": {"type": "string", "optional": true},
+        "thread_id": {"type": "string"},
+        "author": {
+          "type": "object",
+          "properties": {
+            "user_id": {"type": "string"},
+            "display_name": {"type": "string"},
+            "avatar_url": {"type": "string"}
+          }
+        },
+        "content": {
+          "type": "object",
+          "properties": {
+            "text": {"type": "string"},
+            "mentions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "user_id": {"type": "string"},
+                  "display_name": {"type": "string"},
+                  "position": {"type": "number"}
+                }
+              }
+            },
+            "attachments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "file_id": {"type": "string"},
+                  "filename": {"type": "string"},
+                  "file_type": {"type": "string"},
+                  "file_size": {"type": "number"}
+                }
+              }
+            }
+          }
+        },
+        "context": {
+          "type": "object",
+          "description": "Where in the model this comment applies",
+          "properties": {
+            "section": {"type": "string"},
+            "field": {"type": "string"},
+            "cell_reference": {"type": "string"},
+            "value_at_time": {"type": "string"}
+          }
+        },
+        "comment_type": {
+          "type": "string",
+          "enum": ["general", "question", "suggestion", "issue", "approval", "review"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open", "resolved", "acknowledged"]
+        },
+        "reactions": {
+          "type": "object",
+          "description": "Emoji reactions to comments",
+          "additionalProperties": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        },
+        "resolved_by": {"type": "string", "optional": true},
+        "resolved_at": {"type": "timestamp", "optional": true},
+        "created_at": {"type": "timestamp"},
+        "updated_at": {"type": "timestamp"}
+      },
+      "indexes": [
+        {"fields": ["workspace_id", "created_at"], "order": "desc"},
+        {"fields": ["thread_id", "created_at"]},
+        {"fields": ["author.user_id"]},
+        {"fields": ["status"]}
+      ]
+    },
+
+    "workspace_changes": {
+      "description": "Real-time change tracking for operational transforms",
+      "document_structure": {
+        "change_id": {"type": "string"},
+        "workspace_id": {"type": "string"},
+        "sequence_number": {"type": "number"},
+        "author": {
+          "type": "object",
+          "properties": {
+            "user_id": {"type": "string"},
+            "display_name": {"type": "string"}
+          }
+        },
+        "operation": {
+          "type": "object",
+          "description": "Operational transform operation",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["insert", "delete", "update", "move", "lock", "unlock"]
+            },
+            "path": {"type": "string"},
+            "position": {"type": "number", "optional": true},
+            "old_value": {"type": "string", "optional": true},
+            "new_value": {"type": "string", "optional": true},
+            "metadata": {"type": "object", "optional": true}
+          }
+        },
+        "transformed": {
+          "type": "boolean",
+          "description": "Whether this change has been transformed"
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "conflicting_change_id": {"type": "string"},
+              "resolution": {"type": "string"},
+              "resolved_by": {"type": "string"}
+            }
+          }
+        },
+        "timestamp": {"type": "timestamp"},
+        "client_timestamp": {"type": "timestamp"}
+      },
+      "indexes": [
+        {"fields": ["workspace_id", "sequence_number"]},
+        {"fields": ["workspace_id", "timestamp"]}
+      ]
+    },
+
+    "user_presence": {
+      "description": "Real-time user presence across the application",
+      "document_structure": {
+        "user_id": {"type": "string"},
+        "status": {
+          "type": "string",
+          "enum": ["online", "away", "busy", "offline"]
+        },
+        "current_location": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["dashboard", "company_profile", "valuation_workspace", "reports"]
+            },
+            "resource_id": {"type": "string", "optional": true},
+            "workspace_id": {"type": "string", "optional": true},
+            "page_url": {"type": "string"}
+          }
+        },
+        "user_info": {
+          "type": "object",
+          "properties": {
+            "display_name": {"type": "string"},
+            "avatar_url": {"type": "string"},
+            "organization_id": {"type": "string"},
+            "role": {"type": "string"}
+          }
+        },
+        "device_info": {
+          "type": "object",
+          "properties": {
+            "device_type": {"type": "string"},
+            "browser": {"type": "string"},
+            "screen_size": {"type": "string"}
+          }
+        },
+        "last_activity": {"type": "timestamp"},
+        "session_start": {"type": "timestamp"},
+        "heartbeat": {"type": "timestamp"}
+      },
+      "indexes": [
+        {"fields": ["status"]},
+        {"fields": ["current_location.workspace_id"]},
+        {"fields": ["last_activity"], "order": "desc"}
+      ]
+    },
+
+    "notifications": {
+      "description": "Real-time notifications for users",
+      "document_structure": {
+        "notification_id": {"type": "string"},
+        "recipient_id": {"type": "string"},
+        "sender_id": {"type": "string", "optional": true},
+        "type": {
+          "type": "string",
+          "enum": [
+            "workspace_invite",
+            "comment_mention", 
+            "workspace_update",
+            "model_approved",
+            "model_rejected",
+            "deadline_reminder",
+            "system_announcement"
+          ]
+        },
+        "title": {"type": "string"},
+        "message": {"type": "string"},
+        "action_required": {"type": "boolean"},
+        "action_url": {"type": "string", "optional": true},
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "workspace_id": {"type": "string", "optional": true},
+            "valuation_id": {"type": "string", "optional": true},
+            "company_id": {"type": "string", "optional": true},
+            "comment_id": {"type": "string", "optional": true}
+          }
+        },
+        "read": {"type": "boolean"},
+        "read_at": {"type": "timestamp", "optional": true},
+        "priority": {
+          "type": "string",
+          "enum": ["low", "normal", "high", "urgent"]
+        },
+        "expires_at": {"type": "timestamp", "optional": true},
+        "created_at": {"type": "timestamp"}
+      },
+      "indexes": [
+        {"fields": ["recipient_id", "read", "created_at"], "order": "desc"},
+        {"fields": ["type"]},
+        {"fields": ["priority"]},
+        {"fields": ["expires_at"]}
+      ]
+    },
+
+    "activity_feed": {
+      "description": "Activity feed for organizations and workspaces",
+      "document_structure": {
+        "activity_id": {"type": "string"},
+        "organization_id": {"type": "string"},
+        "workspace_id": {"type": "string", "optional": true},
+        "actor": {
+          "type": "object",
+          "properties": {
+            "user_id": {"type": "string"},
+            "display_name": {"type": "string"},
+            "avatar_url": {"type": "string"}
+          }
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "created_workspace",
+            "updated_valuation", 
+            "added_comment",
+            "invited_user",
+            "approved_model",
+            "uploaded_document",
+            "completed_analysis"
+          ]
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["workspace", "valuation", "company", "document", "user"]
+            },
+            "id": {"type": "string"},
+            "name": {"type": "string"}
+          }
+        },
+        "description": {"type": "string"},
+        "metadata": {
+          "type": "object",
+          "description": "Additional context for the activity"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public", "organization", "workspace", "private"]
+        },
+        "timestamp": {"type": "timestamp"}
+      },
+      "indexes": [
+        {"fields": ["organization_id", "timestamp"], "order": "desc"},
+        {"fields": ["workspace_id", "timestamp"], "order": "desc"},
+        {"fields": ["actor.user_id", "timestamp"], "order": "desc"},
+        {"fields": ["action", "timestamp"], "order": "desc"}
+      ]
+    },
+
+    "collaboration_sessions": {
+      "description": "Active collaboration sessions for workspaces",
+      "document_structure": {
+        "session_id": {"type": "string"},
+        "workspace_id": {"type": "string"},
+        "participants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "user_id": {"type": "string"},
+              "display_name": {"type": "string"},
+              "role": {"type": "string"},
+              "joined_at": {"type": "timestamp"},
+              "last_seen": {"type": "timestamp"},
+              "connection_status": {"type": "string", "enum": ["connected", "disconnected", "reconnecting"]}
+            }
+          }
+        },
+        "session_type": {
+          "type": "string",
+          "enum": ["review", "collaborative_edit", "presentation", "discussion"]
+        },
+        "current_focus": {
+          "type": "object",
+          "properties": {
+            "section": {"type": "string"},
+            "presenter": {"type": "string"},
+            "locked_sections": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "recording": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "recording_id": {"type": "string", "optional": true},
+            "started_by": {"type": "string", "optional": true}
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "paused", "ended"]
+        },
+        "started_at": {"type": "timestamp"},
+        "ended_at": {"type": "timestamp", "optional": true},
+        "started_by": {"type": "string"}
+      },
+      "indexes": [
+        {"fields": ["workspace_id", "status"]},
+        {"fields": ["started_at"], "order": "desc"}
+      ]
+    },
+
+    "real_time_cursors": {
+      "description": "Real-time cursor positions for collaborative editing",
+      "document_structure": {
+        "cursor_id": {"type": "string"},
+        "workspace_id": {"type": "string"},
+        "user_id": {"type": "string"},
+        "position": {
+          "type": "object",
+          "properties": {
+            "section": {"type": "string"},
+            "field": {"type": "string"},
+            "row": {"type": "number", "optional": true},
+            "column": {"type": "number", "optional": true},
+            "selection_start": {"type": "number", "optional": true},
+            "selection_end": {"type": "number", "optional": true}
+          }
+        },
+        "user_info": {
+          "type": "object",
+          "properties": {
+            "display_name": {"type": "string"},
+            "avatar_url": {"type": "string"},
+            "cursor_color": {"type": "string"}
+          }
+        },
+        "last_updated": {"type": "timestamp"},
+        "expires_at": {"type": "timestamp"}
+      },
+      "indexes": [
+        {"fields": ["workspace_id", "user_id"]},
+        {"fields": ["expires_at"]}
+      ]
+    },
+
+    "version_history": {
+      "description": "Version control for collaborative documents",
+      "document_structure": {
+        "version_id": {"type": "string"},
+        "workspace_id": {"type": "string"},
+        "version_number": {"type": "number"},
+        "parent_version": {"type": "string", "optional": true},
+        "branch": {"type": "string", "default": "main"},
+        "author": {
+          "type": "object",
+          "properties": {
+            "user_id": {"type": "string"},
+            "display_name": {"type": "string"}
+          }
+        },
+        "changes_summary": {
+          "type": "object",
+          "properties": {
+            "sections_modified": {"type": "array", "items": {"type": "string"}},
+            "fields_changed": {"type": "number"},
+            "additions": {"type": "number"},
+            "deletions": {"type": "number"}
+          }
+        },
+        "commit_message": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "snapshot": {
+          "type": "object",
+          "description": "Full document state at this version"
+        },
+        "delta": {
+          "type": "object", 
+          "description": "Changes from parent version"
+        },
+        "created_at": {"type": "timestamp"},
+        "is_checkpoint": {"type": "boolean"}
+      },
+      "indexes": [
+        {"fields": ["workspace_id", "version_number"], "order": "desc"},
+        {"fields": ["branch", "created_at"], "order": "desc"},
+        {"fields": ["author.user_id", "created_at"], "order": "desc"},
+        {"fields": ["is_checkpoint"]}
+      ]
+    }
+  },
+
+  "security_rules": {
+    "description": "Firestore security rules for real-time collaboration",
+    "rules": {
+      "workspaces": {
+        "read": "request.auth != null && (resource.data.organization_id in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organization_ids || resource.data.permissions.public_read == true || request.auth.uid in resource.data.permissions.invited_users[].user_id)",
+        "write": "request.auth != null && (request.auth.uid == resource.data.created_by || 'editor' in get(/databases/$(database)/documents/user_organizations/$(request.auth.uid + '_' + resource.data.organization_id)).data.roles)"
+      },
+      "workspace_comments": {
+        "read": "request.auth != null && request.auth.uid in get(/databases/$(database)/documents/workspaces/$(resource.data.workspace_id)).data.active_users[].user_id",
+        "create": "request.auth != null && request.auth.uid == request.resource.data.author.user_id",
+        "update": "request.auth != null && request.auth.uid == resource.data.author.user_id",
+        "delete": "request.auth != null && (request.auth.uid == resource.data.author.user_id || hasRole(request.auth.uid, 'admin'))"
+      },
+      "user_presence": {
+        "read": "request.auth != null",
+        "write": "request.auth != null && request.auth.uid == resource.id"
+      },
+      "notifications": {
+        "read": "request.auth != null && request.auth.uid == resource.data.recipient_id",
+        "write": "request.auth != null && request.auth.uid == resource.data.recipient_id"
+      }
+    }
+  },
+
+  "cloud_functions": {
+    "description": "Cloud Functions for real-time collaboration features",
+    "functions": {
+      "onWorkspaceUpdate": {
+        "trigger": "firestore.document.update",
+        "path": "workspaces/{workspaceId}",
+        "description": "Handle workspace updates and notify active users"
+      },
+      "onCommentCreate": {
+        "trigger": "firestore.document.create", 
+        "path": "workspace_comments/{commentId}",
+        "description": "Send notifications for new comments and mentions"
+      },
+      "onUserPresenceUpdate": {
+        "trigger": "firestore.document.update",
+        "path": "user_presence/{userId}",
+        "description": "Update workspace active users when presence changes"
+      },
+      "cleanupExpiredSessions": {
+        "trigger": "scheduled",
+        "schedule": "0 */6 * * *",
+        "description": "Clean up expired collaboration sessions and cursors"
+      },
+      "generateActivityFeed": {
+        "trigger": "firestore.document.write",
+        "path": "{collection}/{documentId}",
+        "description": "Generate activity feed entries for relevant actions"
+      }
+    }
+  },
+
+  "real_time_subscriptions": {
+    "description": "WebSocket subscription patterns for real-time features",
+    "subscriptions": {
+      "workspace_updates": {
+        "pattern": "workspaces/{workspaceId}",
+        "events": ["document_update", "user_join", "user_leave", "lock_change"]
+      },
+      "workspace_comments": {
+        "pattern": "workspace_comments",
+        "filters": ["workspace_id == '{workspaceId}'"],
+        "events": ["document_create", "document_update", "document_delete"]
+      },
+      "user_presence": {
+        "pattern": "user_presence",
+        "filters": ["current_location.workspace_id == '{workspaceId}'"],
+        "events": ["document_update", "document_delete"]
+      },
+      "cursors": {
+        "pattern": "real_time_cursors",
+        "filters": ["workspace_id == '{workspaceId}'"],
+        "events": ["document_create", "document_update", "document_delete"]
+      },
+      "notifications": {
+        "pattern": "notifications",
+        "filters": ["recipient_id == '{userId}'", "read == false"],
+        "events": ["document_create", "document_update"]
+      }
+    }
+  },
+
+  "performance_optimizations": {
+    "description": "Performance optimization strategies for real-time features",
+    "strategies": {
+      "data_pagination": {
+        "comments": "Limit to 50 comments per query, implement cursor-based pagination",
+        "activity_feed": "Limit to 100 activities per query",
+        "version_history": "Load only recent versions initially"
+      },
+      "compound_indexes": {
+        "workspace_comments": ["workspace_id", "created_at DESC"],
+        "activity_feed": ["organization_id", "timestamp DESC"],
+        "notifications": ["recipient_id", "read", "created_at DESC"]
+      },
+      "client_side_caching": {
+        "user_presence": "Cache for 30 seconds",
+        "workspace_metadata": "Cache for 5 minutes",
+        "comments": "Cache until invalidated by real-time updates"
+      },
+      "connection_management": {
+        "max_concurrent_connections": 1000,
+        "heartbeat_interval": "30 seconds",
+        "reconnection_strategy": "exponential_backoff"
+      }
+    }
+  }
+}

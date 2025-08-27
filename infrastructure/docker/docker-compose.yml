@@ -1,0 +1,302 @@
+# Docker Compose for IPO Valuation Platform
+# Complete development and testing environment
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: uprez-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-uprez_valuation}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - uprez-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: uprez-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - uprez-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  # Backend API
+  backend:
+    build:
+      context: ../src/backend
+      dockerfile: ../../infrastructure/docker/Dockerfile.backend
+      target: development
+      args:
+        NODE_ENV: development
+    container_name: uprez-backend
+    ports:
+      - "8000:8000"
+      - "9229:9229" # Debug port
+    environment:
+      NODE_ENV: development
+      PORT: 8000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-uprez_valuation}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-key}
+      CORS_ORIGINS: http://localhost:3000,http://localhost:3001
+    volumes:
+      - ../src/backend:/app
+      - backend_node_modules:/app/node_modules
+    networks:
+      - uprez-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # Frontend React App
+  frontend:
+    build:
+      context: ../src/frontend
+      dockerfile: ../../infrastructure/docker/Dockerfile.frontend
+      target: development
+      args:
+        REACT_APP_API_URL: http://localhost:8000
+        REACT_APP_VERSION: ${APP_VERSION:-dev}
+        REACT_APP_ENVIRONMENT: development
+    container_name: uprez-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+      REACT_APP_VERSION: ${APP_VERSION:-dev}
+      REACT_APP_ENVIRONMENT: development
+      WATCHPACK_POLLING: true
+    volumes:
+      - ../src/frontend:/app
+      - frontend_node_modules:/app/node_modules
+    networks:
+      - uprez-network
+    depends_on:
+      - backend
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # Admin Dashboard
+  admin:
+    build:
+      context: ../src/admin
+      dockerfile: ../../infrastructure/docker/Dockerfile.frontend
+      target: development
+      args:
+        REACT_APP_API_URL: http://localhost:8000
+        REACT_APP_VERSION: ${APP_VERSION:-dev}
+        REACT_APP_ENVIRONMENT: development
+    container_name: uprez-admin
+    ports:
+      - "3001:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+      REACT_APP_VERSION: ${APP_VERSION:-dev}
+      REACT_APP_ENVIRONMENT: development
+      WATCHPACK_POLLING: true
+    volumes:
+      - ../src/admin:/app
+      - admin_node_modules:/app/node_modules
+    networks:
+      - uprez-network
+    depends_on:
+      - backend
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # Nginx Load Balancer
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: uprez-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./ssl:/etc/nginx/ssl
+    networks:
+      - uprez-network
+    depends_on:
+      - frontend
+      - backend
+      - admin
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: uprez-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - uprez-network
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: uprez-grafana
+    ports:
+      - "3002:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_USER: admin
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - uprez-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    user: "472"
+    security_opt:
+      - no-new-privileges:true
+
+  # Jaeger Tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.48
+    container_name: uprez-jaeger
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+    environment:
+      COLLECTOR_OTLP_ENABLED: true
+    networks:
+      - uprez-network
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # ElasticSearch for Logging
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.9.0
+    container_name: uprez-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: false
+      ES_JAVA_OPTS: "-Xmx512m -Xms512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - uprez-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # Kibana for Log Visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.9.0
+    container_name: uprez-kibana
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    networks:
+      - uprez-network
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+# Networks
+networks:
+  uprez-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Volumes
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_node_modules:
+    driver: local
+  frontend_node_modules:
+    driver: local
+  admin_node_modules:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  elasticsearch_data:
+    driver: local

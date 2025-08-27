@@ -1,0 +1,122 @@
+# Kustomization base configuration for IPO Valuation Platform
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: uprez-valuation-base
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+# Common labels applied to all resources
+commonLabels:
+  app.kubernetes.io/name: uprez-valuation
+  app.kubernetes.io/part-of: uprez-valuation-platform
+  app.kubernetes.io/managed-by: kustomize
+
+# Common annotations applied to all resources
+commonAnnotations:
+  contact: "devops@uprez.com"
+  documentation: "https://docs.uprez-valuation.com"
+  source: "https://github.com/uprez/uprez-valuation"
+
+# Namespace for all resources
+namespace: uprez-valuation
+
+# Resource files included in this kustomization
+resources:
+- namespace.yaml
+- configmap.yaml
+- secrets.yaml
+- deployments.yaml
+- services.yaml
+- ingress.yaml
+- hpa.yaml
+
+# ConfigMap generators
+configMapGenerator:
+- name: environment-config
+  literals:
+  - DEPLOYMENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  - KUSTOMIZE_VERSION=v5.0.0
+  - KUBERNETES_VERSION=v1.27.0
+
+# Secret generators (use with caution in production)
+secretGenerator:
+- name: build-info
+  literals:
+  - BUILD_NUMBER=BUILD_NUMBER_PLACEHOLDER
+  - GIT_COMMIT=GIT_COMMIT_PLACEHOLDER
+  - GIT_BRANCH=GIT_BRANCH_PLACEHOLDER
+  - BUILD_DATE=BUILD_DATE_PLACEHOLDER
+
+# Name prefix for all resources
+namePrefix: ""
+
+# Name suffix for all resources
+nameSuffix: ""
+
+# Images to be used (will be overridden in overlays)
+images:
+- name: frontend-image
+  newName: gcr.io/PROJECT_ID/uprez-valuation-frontend
+  newTag: latest
+- name: backend-image
+  newName: gcr.io/PROJECT_ID/uprez-valuation-backend
+  newTag: latest
+- name: admin-image
+  newName: gcr.io/PROJECT_ID/uprez-valuation-admin
+  newTag: latest
+
+# Patches to apply to resources
+patches:
+- patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/image
+      value: frontend-image
+  target:
+    kind: Deployment
+    name: frontend-deployment
+
+- patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/image
+      value: backend-image
+  target:
+    kind: Deployment
+    name: backend-deployment
+
+- patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/image
+      value: admin-image
+  target:
+    kind: Deployment
+    name: admin-deployment
+
+# Replacements for template variables
+replacements:
+- source:
+    kind: ConfigMap
+    name: environment-config
+    fieldPath: data.DEPLOYMENT_TIME
+  targets:
+  - select:
+      kind: Deployment
+    fieldPaths:
+    - metadata.annotations.[deployment.kubernetes.io/last-updated]
+
+# Resource transformations
+transformers: []
+
+# Generators for additional resources
+generators: []
+
+# Validation rules
+validators: []
+
+# Build metadata
+buildMetadata:
+- KustomizeVersion
+- BuildDate
+- GitCommit
+- GitTreeState

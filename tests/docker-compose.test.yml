@@ -1,0 +1,360 @@
+version: '3.8'
+
+services:
+  # PostgreSQL test database
+  postgres-test:
+    image: postgres:15
+    container_name: ipo_valuation_postgres_test
+    environment:
+      POSTGRES_DB: test_ipo_valuation
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_pass
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./fixtures/sql:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d test_ipo_valuation"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test-network
+
+  # Redis test instance
+  redis-test:
+    image: redis:7-alpine
+    container_name: ipo_valuation_redis_test
+    command: redis-server --appendonly yes --requirepass test_redis_password
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_test_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test-network
+
+  # Backend application for testing
+  backend-test:
+    build:
+      context: ../src/backend
+      dockerfile: Dockerfile
+      target: test
+    container_name: ipo_valuation_backend_test
+    environment:
+      # Database configuration
+      DATABASE_URL: postgresql://test_user:test_pass@postgres-test:5432/test_ipo_valuation
+      REDIS_URL: redis://:test_redis_password@redis-test:6379/0
+      
+      # Application configuration
+      ENVIRONMENT: test
+      DEBUG: "true"
+      SECRET_KEY: test-secret-key-for-testing-only
+      JWT_SECRET: test-jwt-secret-key
+      
+      # GCP Test Configuration
+      GOOGLE_CLOUD_PROJECT: ipo-valuation-test
+      GOOGLE_APPLICATION_CREDENTIALS: /app/credentials/test-service-account.json
+      
+      # External API configuration (disabled for testing)
+      EXTERNAL_API_ENABLED: "false"
+      ASX_API_ENABLED: "false"
+      RATE_LIMITING_ENABLED: "false"
+      
+      # ML Model configuration
+      ML_MODELS_PATH: /app/models/test
+      MODEL_SERVING_ENABLED: "false"
+      
+      # Logging configuration
+      LOG_LEVEL: INFO
+      STRUCTURED_LOGGING: "true"
+      
+      # Testing specific
+      TESTING: "true"
+      TEST_DATABASE_URL: postgresql://test_user:test_pass@postgres-test:5432/test_ipo_valuation
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    volumes:
+      - ../src/backend:/app
+      - ./fixtures/gcp-credentials:/app/credentials
+      - ./fixtures/ml-models:/app/models/test
+    command: >
+      sh -c "
+        echo 'Waiting for database to be ready...' &&
+        python -c 'import time; time.sleep(10)' &&
+        echo 'Running database migrations...' &&
+        alembic upgrade head &&
+        echo 'Starting test server...' &&
+        uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - test-network
+
+  # Frontend test runner
+  frontend-test:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.test
+    container_name: ipo_valuation_frontend_test
+    environment:
+      NODE_ENV: test
+      CI: "true"
+      REACT_APP_API_BASE_URL: http://backend-test:8000/api/v1
+      REACT_APP_ENVIRONMENT: test
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+      - ./reports:/app/reports
+    command: >
+      sh -c "
+        echo 'Installing dependencies...' &&
+        npm ci &&
+        echo 'Installing Playwright browsers...' &&
+        npx playwright install --with-deps &&
+        echo 'Running frontend tests...' &&
+        npm run test:ci &&
+        echo 'Running E2E tests...' &&
+        npm run test:e2e -- --reporter=junit
+      "
+    depends_on:
+      backend-test:
+        condition: service_healthy
+    networks:
+      - test-network
+
+  # Backend test runner
+  backend-test-runner:
+    build:
+      context: ../src/backend
+      dockerfile: Dockerfile
+      target: test
+    container_name: ipo_valuation_backend_test_runner
+    environment:
+      DATABASE_URL: postgresql://test_user:test_pass@postgres-test:5432/test_ipo_valuation
+      REDIS_URL: redis://:test_redis_password@redis-test:6379/0
+      ENVIRONMENT: test
+      TESTING: "true"
+      PYTEST_WORKERS: "auto"
+    volumes:
+      - ../src/backend:/app/src
+      - ../tests:/app/tests
+      - ./reports:/app/reports
+      - ./coverage:/app/coverage
+    working_dir: /app
+    command: >
+      sh -c "
+        echo 'Waiting for services to be ready...' &&
+        python -c 'import time; time.sleep(15)' &&
+        echo 'Running backend tests...' &&
+        pytest tests/backend/ -v \
+          --cov=src/backend \
+          --cov-report=html:coverage/backend \
+          --cov-report=xml:reports/backend-coverage.xml \
+          --junit-xml=reports/backend-results.xml \
+          --tb=short
+      "
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    networks:
+      - test-network
+
+  # ML test runner
+  ml-test-runner:
+    build:
+      context: ../src/backend
+      dockerfile: Dockerfile
+      target: test
+    container_name: ipo_valuation_ml_test_runner
+    environment:
+      DATABASE_URL: postgresql://test_user:test_pass@postgres-test:5432/test_ipo_valuation
+      ENVIRONMENT: test
+      TESTING: "true"
+      ML_TESTING: "true"
+    volumes:
+      - ../src/backend:/app/src
+      - ../tests:/app/tests
+      - ./reports:/app/reports
+      - ./fixtures/ml-models:/app/models/test
+      - ./fixtures/test-datasets:/app/datasets
+    working_dir: /app
+    command: >
+      sh -c "
+        echo 'Running ML model tests...' &&
+        pytest tests/backend/ml/ -v \
+          --junit-xml=reports/ml-results.xml \
+          -m 'not slow' \
+          --tb=short
+      "
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+    networks:
+      - test-network
+
+  # Performance test runner
+  performance-test-runner:
+    image: python:3.11-slim
+    container_name: ipo_valuation_performance_test_runner
+    environment:
+      TARGET_URL: http://backend-test:8000
+    volumes:
+      - ./performance:/app/tests
+      - ./reports:/app/reports
+    working_dir: /app
+    command: >
+      sh -c "
+        pip install locust &&
+        echo 'Running performance tests...' &&
+        cd tests &&
+        locust -f load_testing.py --headless \
+          --users 20 --spawn-rate 5 -t 3m \
+          --host \$TARGET_URL \
+          --html /app/reports/load-test-report.html \
+          --csv /app/reports/load-test
+      "
+    depends_on:
+      backend-test:
+        condition: service_healthy
+    networks:
+      - test-network
+
+  # Security test runner
+  security-test-runner:
+    build:
+      context: ../src/backend
+      dockerfile: Dockerfile
+      target: test
+    container_name: ipo_valuation_security_test_runner
+    environment:
+      DATABASE_URL: postgresql://test_user:test_pass@postgres-test:5432/test_ipo_valuation
+      ENVIRONMENT: test
+      TESTING: "true"
+    volumes:
+      - ../src/backend:/app/src
+      - ../tests:/app/tests
+      - ./reports:/app/reports
+    working_dir: /app
+    command: >
+      sh -c "
+        pip install bandit safety &&
+        echo 'Running security tests...' &&
+        pytest tests/security/ -v \
+          --junit-xml=reports/security-results.xml &&
+        echo 'Running security scan...' &&
+        bandit -r src/backend -f json -o reports/security-scan.json || true &&
+        safety check --json --output reports/safety-scan.json || true
+      "
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+    networks:
+      - test-network
+
+  # Test report aggregator
+  test-report-aggregator:
+    image: python:3.11-slim
+    container_name: ipo_valuation_test_report_aggregator
+    volumes:
+      - ./reports:/app/reports
+      - ./coverage:/app/coverage
+    working_dir: /app
+    command: >
+      sh -c "
+        pip install junitparser coverage &&
+        echo 'Aggregating test reports...' &&
+        python -c \"
+        import glob
+        import json
+        from junitparser import JUnitXml
+        
+        # Aggregate JUnit results
+        total_tests = 0
+        total_failures = 0
+        total_errors = 0
+        
+        for xml_file in glob.glob('reports/*.xml'):
+            try:
+                xml = JUnitXml.fromfile(xml_file)
+                total_tests += xml.tests
+                total_failures += xml.failures
+                total_errors += xml.errors
+                print(f'Processed {xml_file}: {xml.tests} tests')
+            except Exception as e:
+                print(f'Error processing {xml_file}: {e}')
+        
+        # Generate summary
+        summary = {
+            'total_tests': total_tests,
+            'total_failures': total_failures,
+            'total_errors': total_errors,
+            'success_rate': round(((total_tests - total_failures - total_errors) / total_tests * 100), 2) if total_tests > 0 else 0
+        }
+        
+        with open('reports/test-summary.json', 'w') as f:
+            json.dump(summary, f, indent=2)
+        
+        print(f'Test Summary:')
+        print(f'Total Tests: {total_tests}')
+        print(f'Failures: {total_failures}')
+        print(f'Errors: {total_errors}')
+        print(f'Success Rate: {summary[\\\"success_rate\\\"]}%')
+        \"
+      "
+    depends_on:
+      - backend-test-runner
+      - frontend-test
+      - ml-test-runner
+      - performance-test-runner
+      - security-test-runner
+    networks:
+      - test-network
+
+  # Nginx for serving test reports
+  test-report-server:
+    image: nginx:alpine
+    container_name: ipo_valuation_test_reports
+    ports:
+      - "8080:80"
+    volumes:
+      - ./reports:/usr/share/nginx/html/reports
+      - ./coverage:/usr/share/nginx/html/coverage
+      - ./nginx-test.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - test-report-aggregator
+    networks:
+      - test-network
+
+volumes:
+  postgres_test_data:
+    driver: local
+  redis_test_data:
+    driver: local
+  frontend_node_modules:
+    driver: local
+
+networks:
+  test-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16

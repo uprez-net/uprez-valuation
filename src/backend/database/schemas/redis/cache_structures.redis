@@ -1,0 +1,342 @@
+# =====================================================
+# Redis Cache Structures for IPO Valuation Platform
+# Optimized for high-performance caching and real-time features
+# =====================================================
+
+# =====================================================
+# USER SESSION MANAGEMENT
+# =====================================================
+
+# User session data - Hash structure
+# Key pattern: session:{session_token_hash}
+# TTL: 24 hours (86400 seconds)
+HSET session:abc123def456 user_id "550e8400-e29b-41d4-a716-446655440000"
+HSET session:abc123def456 organization_id "550e8400-e29b-41d4-a716-446655440001"  
+HSET session:abc123def456 email "john.doe@uprez.com"
+HSET session:abc123def456 display_name "John Doe"
+HSET session:abc123def456 role "analyst"
+HSET session:abc123def456 permissions '["read:companies", "write:valuations", "read:financials"]'
+HSET session:abc123def456 timezone "America/New_York"
+HSET session:abc123def456 last_activity "2024-01-15T14:30:00Z"
+HSET session:abc123def456 ip_address "192.168.1.100"
+HSET session:abc123def456 user_agent "Mozilla/5.0..."
+EXPIRE session:abc123def456 86400
+
+# User active sessions - Set for tracking multiple sessions per user
+# Key pattern: user_sessions:{user_id}
+SADD user_sessions:550e8400-e29b-41d4-a716-446655440000 "abc123def456"
+SADD user_sessions:550e8400-e29b-41d4-a716-446655440000 "def456ghi789"
+EXPIRE user_sessions:550e8400-e29b-41d4-a716-446655440000 86400
+
+# =====================================================
+# COMPANY DATA CACHING
+# =====================================================
+
+# Company basic information - Hash structure
+# Key pattern: company:{company_id}
+# TTL: 1 hour (3600 seconds)
+HSET company:550e8400-e29b-41d4-a716-446655440002 name "TechCorp Inc."
+HSET company:550e8400-e29b-41d4-a716-446655440002 ticker_symbol "TECH"
+HSET company:550e8400-e29b-41d4-a716-446655440002 sector "Technology"
+HSET company:550e8400-e29b-41d4-a716-446655440002 industry "Software"
+HSET company:550e8400-e29b-41d4-a716-446655440002 market_cap "5000000000"
+HSET company:550e8400-e29b-41d4-a716-446655440002 country "US"
+HSET company:550e8400-e29b-41d4-a716-446655440002 ipo_date "2024-03-15"
+HSET company:550e8400-e29b-41d4-a716-446655440002 status "active"
+HSET company:550e8400-e29b-41d4-a716-446655440002 last_updated "2024-01-15T14:30:00Z"
+EXPIRE company:550e8400-e29b-41d4-a716-446655440002 3600
+
+# Company search index - Sorted set for fast text search
+# Key pattern: company_search:{search_term}
+ZADD company_search:tech 1.0 "550e8400-e29b-41d4-a716-446655440002"
+ZADD company_search:software 0.9 "550e8400-e29b-41d4-a716-446655440002"
+EXPIRE company_search:tech 1800
+EXPIRE company_search:software 1800
+
+# Sector companies - Set for grouping companies by sector
+# Key pattern: sector:{sector_name}
+SADD sector:technology "550e8400-e29b-41d4-a716-446655440002"
+SADD sector:technology "550e8400-e29b-41d4-a716-446655440003"
+EXPIRE sector:technology 7200
+
+# =====================================================
+# FINANCIAL DATA CACHING
+# =====================================================
+
+# Latest financial statements - Hash structure
+# Key pattern: financials:{company_id}:{statement_type}:latest
+# TTL: 4 hours (14400 seconds)
+HSET financials:550e8400-e29b-41d4-a716-446655440002:income_statement:latest revenue "1000000000"
+HSET financials:550e8400-e29b-41d4-a716-446655440002:income_statement:latest gross_profit "700000000"
+HSET financials:550e8400-e29b-41d4-a716-446655440002:income_statement:latest operating_income "300000000"
+HSET financials:550e8400-e29b-41d4-a716-446655440002:income_statement:latest net_income "200000000"
+HSET financials:550e8400-e29b-41d4-a716-446655440002:income_statement:latest ebitda "350000000"
+HSET financials:550e8400-e29b-41d4-a716-446655440002:income_statement:latest period_end_date "2023-12-31"
+HSET financials:550e8400-e29b-41d4-a716-446655440002:income_statement:latest currency "USD"
+EXPIRE financials:550e8400-e29b-41d4-a716-446655440002:income_statement:latest 14400
+
+# Financial ratios - Hash structure for quick access
+# Key pattern: ratios:{company_id}:latest
+HSET ratios:550e8400-e29b-41d4-a716-446655440002:latest pe_ratio "25.5"
+HSET ratios:550e8400-e29b-41d4-a716-446655440002:latest ev_ebitda "18.2"
+HSET ratios:550e8400-e29b-41d4-a716-446655440002:latest ev_revenue "5.0"
+HSET ratios:550e8400-e29b-41d4-a716-446655440002:latest roe "0.15"
+HSET ratios:550e8400-e29b-41d4-a716-446655440002:latest debt_to_equity "0.3"
+HSET ratios:550e8400-e29b-41d4-a716-446655440002:latest current_ratio "2.1"
+EXPIRE ratios:550e8400-e29b-41d4-a716-446655440002:latest 7200
+
+# =====================================================
+# VALUATION CACHING
+# =====================================================
+
+# Valuation results - Hash structure
+# Key pattern: valuation:{valuation_id}
+# TTL: 8 hours (28800 seconds)
+HSET valuation:550e8400-e29b-41d4-a716-446655440004 company_id "550e8400-e29b-41d4-a716-446655440002"
+HSET valuation:550e8400-e29b-41d4-a716-446655440004 model_type "dcf"
+HSET valuation:550e8400-e29b-41d4-a716-446655440004 per_share_value "125.50"
+HSET valuation:550e8400-e29b-41d4-a716-446655440004 enterprise_value "12500000000"
+HSET valuation:550e8400-e29b-41d4-a716-446655440004 equity_value "12550000000"
+HSET valuation:550e8400-e29b-41d4-a716-446655440004 confidence_level "0.85"
+HSET valuation:550e8400-e29b-41d4-a716-446655440004 scenario "base"
+HSET valuation:550e8400-e29b-41d4-a716-446655440004 status "approved"
+HSET valuation:550e8400-e29b-41d4-a716-446655440004 created_by "550e8400-e29b-41d4-a716-446655440000"
+HSET valuation:550e8400-e29b-41d4-a716-446655440004 valuation_date "2024-01-15"
+EXPIRE valuation:550e8400-e29b-41d4-a716-446655440004 28800
+
+# Company valuations list - Sorted set ordered by date
+# Key pattern: company_valuations:{company_id}
+ZADD company_valuations:550e8400-e29b-41d4-a716-446655440002 1705334400 "550e8400-e29b-41d4-a716-446655440004"
+ZADD company_valuations:550e8400-e29b-41d4-a716-446655440002 1705248000 "550e8400-e29b-41d4-a716-446655440005"
+EXPIRE company_valuations:550e8400-e29b-41d4-a716-446655440002 7200
+
+# User valuations - Sorted set for user's recent valuations
+# Key pattern: user_valuations:{user_id}
+ZADD user_valuations:550e8400-e29b-41d4-a716-446655440000 1705334400 "550e8400-e29b-41d4-a716-446655440004"
+EXPIRE user_valuations:550e8400-e29b-41d4-a716-446655440000 86400
+
+# =====================================================
+# MARKET DATA CACHING
+# =====================================================
+
+# Real-time market data - Hash structure
+# Key pattern: market:{ticker_symbol}
+# TTL: 15 minutes (900 seconds)
+HSET market:TECH price "142.50"
+HSET market:TECH change "2.35"
+HSET market:TECH change_percent "1.68"
+HSET market:TECH volume "2500000"
+HSET market:TECH market_cap "14250000000"
+HSET market:TECH pe_ratio "25.1"
+HSET market:TECH day_high "143.20"
+HSET market:TECH day_low "140.80"
+HSET market:TECH last_updated "2024-01-15T14:30:00Z"
+EXPIRE market:TECH 900
+
+# Market indices - Hash structure for major indices
+# Key pattern: index:{index_name}
+HSET index:sp500 level "4750.25"
+HSET index:sp500 change "15.30"
+HSET index:sp500 change_percent "0.32"
+HSET index:sp500 last_updated "2024-01-15T14:30:00Z"
+EXPIRE index:sp500 900
+
+# =====================================================
+# PEER COMPARISON CACHING
+# =====================================================
+
+# Peer group for a company - Set structure
+# Key pattern: peers:{company_id}
+SADD peers:550e8400-e29b-41d4-a716-446655440002 "550e8400-e29b-41d4-a716-446655440006"
+SADD peers:550e8400-e29b-41d4-a716-446655440002 "550e8400-e29b-41d4-a716-446655440007"
+EXPIRE peers:550e8400-e29b-41d4-a716-446655440002 7200
+
+# Sector benchmarks - Hash structure
+# Key pattern: benchmarks:{sector}:{metric}
+HSET benchmarks:technology:pe_ratio median "23.5"
+HSET benchmarks:technology:pe_ratio p25 "18.2"
+HSET benchmarks:technology:pe_ratio p75 "28.9"
+HSET benchmarks:technology:pe_ratio last_updated "2024-01-15T12:00:00Z"
+EXPIRE benchmarks:technology:pe_ratio 3600
+
+# =====================================================
+# API RATE LIMITING
+# =====================================================
+
+# Rate limiting counters - String structure with auto-expiry
+# Key pattern: rate_limit:{api_key_hash}:{window}
+SET rate_limit:api123:minute:2024011514 "45" EX 60
+SET rate_limit:api123:hour:2024011514 "1250" EX 3600
+SET rate_limit:api123:day:20240115 "15000" EX 86400
+
+# User request counters
+SET rate_limit:user:550e8400-e29b-41d4-a716-446655440000:minute "15" EX 60
+SET rate_limit:user:550e8400-e29b-41d4-a716-446655440000:hour "500" EX 3600
+
+# =====================================================
+# REAL-TIME COLLABORATION
+# =====================================================
+
+# Active users in a valuation workspace - Set structure
+# Key pattern: workspace:{valuation_id}:users
+SADD workspace:550e8400-e29b-41d4-a716-446655440004:users "550e8400-e29b-41d4-a716-446655440000"
+SADD workspace:550e8400-e29b-41d4-a716-446655440004:users "550e8400-e29b-41d4-a716-446655440001"
+EXPIRE workspace:550e8400-e29b-41d4-a716-446655440004:users 1800
+
+# User presence - Hash structure
+# Key pattern: presence:{user_id}
+HSET presence:550e8400-e29b-41d4-a716-446655440000 status "active"
+HSET presence:550e8400-e29b-41d4-a716-446655440000 current_workspace "550e8400-e29b-41d4-a716-446655440004"
+HSET presence:550e8400-e29b-41d4-a716-446655440000 last_seen "2024-01-15T14:30:00Z"
+HSET presence:550e8400-e29b-41d4-a716-446655440000 cursor_position '{"section": "assumptions", "field": "discount_rate"}'
+EXPIRE presence:550e8400-e29b-41d4-a716-446655440000 300
+
+# Recent activity feed - List structure (FIFO)
+# Key pattern: activity:{organization_id}
+LPUSH activity:550e8400-e29b-41d4-a716-446655440001 '{"user": "John Doe", "action": "updated valuation", "company": "TechCorp", "timestamp": "2024-01-15T14:30:00Z"}'
+LTRIM activity:550e8400-e29b-41d4-a716-446655440001 0 49  # Keep only 50 recent activities
+EXPIRE activity:550e8400-e29b-41d4-a716-446655440001 3600
+
+# =====================================================
+# CALCULATION CACHING
+# =====================================================
+
+# Model calculation cache - String structure with JSON data
+# Key pattern: calc:{model_type}:{input_hash}
+SET calc:dcf:sha256abc123 '{"enterprise_value": 12500000000, "equity_value": 12550000000, "per_share_value": 125.50, "calculated_at": "2024-01-15T14:30:00Z"}' EX 1800
+
+# Sensitivity analysis cache - Hash structure
+# Key pattern: sensitivity:{valuation_id}
+HSET sensitivity:550e8400-e29b-41d4-a716-446655440004 discount_rate_minus_1 "135.20"
+HSET sensitivity:550e8400-e29b-41d4-a716-446655440004 discount_rate_plus_1 "116.80"
+HSET sensitivity:550e8400-e29b-41d4-a716-446655440004 growth_rate_minus_1 "118.90"
+HSET sensitivity:550e8400-e29b-41d4-a716-446655440004 growth_rate_plus_1 "132.10"
+EXPIRE sensitivity:550e8400-e29b-41d4-a716-446655440004 7200
+
+# =====================================================
+# NOTIFICATION SYSTEM
+# =====================================================
+
+# User notification queue - List structure
+# Key pattern: notifications:{user_id}
+LPUSH notifications:550e8400-e29b-41d4-a716-446655440000 '{"type": "valuation_approved", "message": "Your TechCorp valuation has been approved", "timestamp": "2024-01-15T14:30:00Z", "read": false}'
+EXPIRE notifications:550e8400-e29b-41d4-a716-446655440000 604800  # 7 days
+
+# Global announcements - List structure
+# Key pattern: announcements:global
+LPUSH announcements:global '{"title": "System Maintenance", "message": "Scheduled maintenance on Jan 20", "priority": "medium", "expires": "2024-01-20T00:00:00Z"}'
+EXPIRE announcements:global 86400
+
+# =====================================================
+# SEARCH AND AUTOCOMPLETE
+# =====================================================
+
+# Autocomplete suggestions - Sorted set with scores based on frequency
+# Key pattern: autocomplete:{type}
+ZADD autocomplete:companies 1000 "TechCorp Inc."
+ZADD autocomplete:companies 500 "TechStart Ltd."
+ZADD autocomplete:companies 750 "Tech Solutions Inc."
+EXPIRE autocomplete:companies 3600
+
+# Recent searches by user - List structure (FIFO)
+# Key pattern: recent_searches:{user_id}
+LPUSH recent_searches:550e8400-e29b-41d4-a716-446655440000 "TechCorp"
+LPUSH recent_searches:550e8400-e29b-41d4-a716-446655440000 "Software companies"
+LTRIM recent_searches:550e8400-e29b-41d4-a716-446655440000 0 9  # Keep only 10 recent searches
+EXPIRE recent_searches:550e8400-e29b-41d4-a716-446655440000 86400
+
+# =====================================================
+# BACKGROUND JOB STATUS
+# =====================================================
+
+# Job status tracking - Hash structure
+# Key pattern: job:{job_id}
+HSET job:calc123 status "processing"
+HSET job:calc123 progress "65"
+HSET job:calc123 started_at "2024-01-15T14:25:00Z"
+HSET job:calc123 user_id "550e8400-e29b-41d4-a716-446655440000"
+HSET job:calc123 job_type "valuation_calculation"
+HSET job:calc123 company_id "550e8400-e29b-41d4-a716-446655440002"
+EXPIRE job:calc123 3600
+
+# User's active jobs - Set structure
+# Key pattern: user_jobs:{user_id}
+SADD user_jobs:550e8400-e29b-41d4-a716-446655440000 "calc123"
+EXPIRE user_jobs:550e8400-e29b-41d4-a716-446655440000 3600
+
+# =====================================================
+# CONFIGURATION AND FEATURE FLAGS
+# =====================================================
+
+# Feature flags - Hash structure
+# Key pattern: features:global
+HSET features:global monte_carlo_analysis "true"
+HSET features:global advanced_charts "true"
+HSET features:global collaboration_features "true"
+HSET features:global export_to_excel "false"
+# No expiry for feature flags
+
+# Organization-specific features
+# Key pattern: features:org:{organization_id}
+HSET features:org:550e8400-e29b-41d4-a716-446655440001 api_access "true"
+HSET features:org:550e8400-e29b-41d4-a716-446655440001 bulk_operations "true"
+HSET features:org:550e8400-e29b-41d4-a716-446655440001 white_label "false"
+
+# =====================================================
+# METRICS AND ANALYTICS
+# =====================================================
+
+# Daily active users counter
+INCR dau:2024-01-15
+EXPIRE dau:2024-01-15 2592000  # Keep for 30 days
+
+# API endpoint usage counters
+INCR api:endpoint:/companies:GET:2024011514
+INCR api:endpoint:/valuations:POST:2024011514
+EXPIRE api:endpoint:/companies:GET:2024011514 86400
+EXPIRE api:endpoint:/valuations:POST:2024011514 86400
+
+# Performance metrics - Hash structure
+HSET perf:2024011514 avg_response_time "150"
+HSET perf:2024011514 max_response_time "2500"
+HSET perf:2024011514 error_rate "0.02"
+HSET perf:2024011514 requests_per_minute "450"
+EXPIRE perf:2024011514 86400
+
+# =====================================================
+# CACHE INVALIDATION PATTERNS
+# =====================================================
+
+# Cache tags for invalidation - Set structure
+# Key pattern: cache_tag:{tag_name}
+SADD cache_tag:company:550e8400-e29b-41d4-a716-446655440002 "company:550e8400-e29b-41d4-a716-446655440002"
+SADD cache_tag:company:550e8400-e29b-41d4-a716-446655440002 "financials:550e8400-e29b-41d4-a716-446655440002:income_statement:latest"
+SADD cache_tag:company:550e8400-e29b-41d4-a716-446655440002 "ratios:550e8400-e29b-41d4-a716-446655440002:latest"
+EXPIRE cache_tag:company:550e8400-e29b-41d4-a716-446655440002 86400
+
+# =====================================================
+# EXAMPLE REDIS COMMANDS FOR COMMON OPERATIONS
+# =====================================================
+
+# Example: Get user session with all details
+# HGETALL session:abc123def456
+
+# Example: Check if user has active session
+# EXISTS session:abc123def456
+
+# Example: Get recent valuations for a company (last 10)
+# ZREVRANGE company_valuations:550e8400-e29b-41d4-a716-446655440002 0 9
+
+# Example: Check rate limit for API key
+# GET rate_limit:api123:minute:2024011514
+
+# Example: Add user to workspace and set presence
+# SADD workspace:550e8400-e29b-41d4-a716-446655440004:users "550e8400-e29b-41d4-a716-446655440000"
+# HSET presence:550e8400-e29b-41d4-a716-446655440000 status "active"
+
+# Example: Search companies by partial name
+# ZRANGEBYLEX autocomplete:companies "[Tech" "[Techz"
+
+# Example: Invalidate all cache entries for a company
+# SMEMBERS cache_tag:company:550e8400-e29b-41d4-a716-446655440002
+# (Then delete all returned keys)

@@ -1,0 +1,287 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: uprez_postgres
+    environment:
+      POSTGRES_DB: uprez_valuation
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d uprez_valuation"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - uprez_network
+
+  # Redis Cache & Message Broker
+  redis:
+    image: redis:7-alpine
+    container_name: uprez_redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - uprez_network
+
+  # Main API Service
+  api:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+      target: production
+    container_name: uprez_api
+    environment:
+      - DATABASE__HOST=postgres
+      - DATABASE__PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - REDIS__HOST=redis
+      - REDIS__PASSWORD=${REDIS_PASSWORD:-redis}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SECRET_KEY=${SECRET_KEY}
+      - GCP__PROJECT_ID=${GCP_PROJECT_ID}
+      - SENTRY_DSN=${SENTRY_DSN}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - uprez_network
+
+  # ML Services
+  ml-service:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+      target: ml-service
+    container_name: uprez_ml_service
+    environment:
+      - DATABASE__HOST=postgres
+      - DATABASE__PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - REDIS__HOST=redis
+      - REDIS__PASSWORD=${REDIS_PASSWORD:-redis}
+      - GCP__PROJECT_ID=${GCP_PROJECT_ID}
+    ports:
+      - "8001:8001"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./models:/app/models
+      - ./ml-cache:/app/ml-cache
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2'
+    networks:
+      - uprez_network
+
+  # Celery Worker - Valuation Tasks
+  celery-valuation:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+      target: celery-worker
+    container_name: uprez_celery_valuation
+    environment:
+      - DATABASE__HOST=postgres
+      - DATABASE__PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - REDIS__HOST=redis
+      - REDIS__PASSWORD=${REDIS_PASSWORD:-redis}
+      - CELERY__BROKER_URL=redis://:${REDIS_PASSWORD:-redis}@redis:6379/1
+      - CELERY__RESULT_BACKEND=redis://:${REDIS_PASSWORD:-redis}@redis:6379/2
+    command: ["celery", "-A", "src.backend.messaging.celery_app", "worker", "--loglevel=info", "--queues=valuation", "--concurrency=2"]
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - uprez_network
+
+  # Celery Worker - Document Processing
+  celery-document:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+      target: celery-worker
+    container_name: uprez_celery_document
+    environment:
+      - DATABASE__HOST=postgres
+      - DATABASE__PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - REDIS__HOST=redis
+      - REDIS__PASSWORD=${REDIS_PASSWORD:-redis}
+      - CELERY__BROKER_URL=redis://:${REDIS_PASSWORD:-redis}@redis:6379/1
+      - CELERY__RESULT_BACKEND=redis://:${REDIS_PASSWORD:-redis}@redis:6379/2
+      - GCP__PROJECT_ID=${GCP_PROJECT_ID}
+    command: ["celery", "-A", "src.backend.messaging.celery_app", "worker", "--loglevel=info", "--queues=document", "--concurrency=4"]
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    networks:
+      - uprez_network
+
+  # Celery Worker - ML Tasks
+  celery-ml:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+      target: celery-worker
+    container_name: uprez_celery_ml
+    environment:
+      - DATABASE__HOST=postgres
+      - DATABASE__PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - REDIS__HOST=redis
+      - REDIS__PASSWORD=${REDIS_PASSWORD:-redis}
+      - CELERY__BROKER_URL=redis://:${REDIS_PASSWORD:-redis}@redis:6379/1
+      - CELERY__RESULT_BACKEND=redis://:${REDIS_PASSWORD:-redis}@redis:6379/2
+      - GCP__PROJECT_ID=${GCP_PROJECT_ID}
+    command: ["celery", "-A", "src.backend.messaging.celery_app", "worker", "--loglevel=info", "--queues=ml", "--concurrency=1"]
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./models:/app/models
+      - ./ml-cache:/app/ml-cache
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+          cpus: '2'
+    networks:
+      - uprez_network
+
+  # Celery Beat Scheduler
+  celery-beat:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+      target: celery-beat
+    container_name: uprez_celery_beat
+    environment:
+      - DATABASE__HOST=postgres
+      - DATABASE__PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - REDIS__HOST=redis
+      - REDIS__PASSWORD=${REDIS_PASSWORD:-redis}
+      - CELERY__BROKER_URL=redis://:${REDIS_PASSWORD:-redis}@redis:6379/1
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./logs:/app/logs
+      - celery_beat_data:/app/celery-beat
+    networks:
+      - uprez_network
+
+  # Flower - Celery Monitoring
+  flower:
+    image: mher/flower:0.9.7
+    container_name: uprez_flower
+    environment:
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:-redis}@redis:6379/1
+      - FLOWER_PORT=5555
+      - FLOWER_BASIC_AUTH=${FLOWER_AUTH:-admin:admin}
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+    networks:
+      - uprez_network
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: uprez_prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - uprez_network
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: uprez_grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - uprez_network
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: uprez_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./static:/var/www/static:ro
+    depends_on:
+      - api
+      - ml-service
+    networks:
+      - uprez_network
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  celery_beat_data:
+
+networks:
+  uprez_network:
+    driver: bridge

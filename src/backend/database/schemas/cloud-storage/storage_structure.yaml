@@ -1,0 +1,507 @@
+# =====================================================
+# Google Cloud Storage Structure for IPO Valuation Platform
+# Document and file management organization
+# =====================================================
+
+# Storage bucket configuration and organization
+buckets:
+  # Primary documents bucket with lifecycle management
+  uprez-documents-prod:
+    location: "US-CENTRAL1"  # Single region for performance
+    storage_class: "STANDARD"
+    versioning: true
+    lifecycle_rules:
+      - condition:
+          age: 90
+          matches_storage_class: ["STANDARD"]
+        action:
+          type: "SetStorageClass"
+          storage_class: "NEARLINE"
+      - condition:
+          age: 365
+          matches_storage_class: ["NEARLINE"] 
+        action:
+          type: "SetStorageClass"
+          storage_class: "COLDLINE"
+      - condition:
+          age: 2555  # 7 years
+        action:
+          type: "Delete"
+    
+    # Folder structure for documents
+    folders:
+      # Company documents organized by company ID
+      companies:
+        structure: "companies/{company_id}/{document_type}/{year}/{filename}"
+        document_types:
+          - "prospectuses"
+          - "financial_statements"
+          - "annual_reports" 
+          - "quarterly_reports"
+          - "sec_filings"
+          - "investor_presentations"
+          - "research_reports"
+          - "due_diligence"
+        example: "companies/550e8400-e29b-41d4-a716-446655440002/prospectuses/2024/techcorp_s1_filing.pdf"
+      
+      # IPO related documents
+      ipos:
+        structure: "ipos/{ipo_id}/{document_type}/{filename}"
+        document_types:
+          - "registration_statements"
+          - "amendments"
+          - "pricing_supplements"
+          - "roadshow_materials"
+          - "underwriter_agreements"
+          - "lock_up_agreements"
+        example: "ipos/ipo-550e8400-e29b-41d4-a716-446655440003/registration_statements/s1_final.pdf"
+      
+      # Valuation model templates and exports
+      valuations:
+        structure: "valuations/{organization_id}/{valuation_id}/{export_type}/{filename}"
+        export_types:
+          - "excel_models"
+          - "pdf_reports"
+          - "presentation_slides"
+          - "sensitivity_analysis"
+          - "scenario_models"
+        example: "valuations/550e8400-e29b-41d4-a716-446655440001/val-123/excel_models/dcf_model_v2.xlsx"
+      
+      # User uploads and temporary files
+      uploads:
+        structure: "uploads/{user_id}/{upload_date}/{filename}"
+        retention: "30 days"
+        example: "uploads/550e8400-e29b-41d4-a716-446655440000/2024-01-15/financial_data.csv"
+      
+      # System backups and exports
+      backups:
+        structure: "backups/{backup_type}/{date}/{filename}"
+        backup_types:
+          - "database_exports"
+          - "model_templates"
+          - "user_data_exports"
+          - "audit_logs"
+        example: "backups/database_exports/2024-01-15/companies_backup.sql"
+      
+      # Data processing and ETL
+      data_processing:
+        structure: "processing/{job_type}/{job_id}/{stage}/{filename}"
+        job_types:
+          - "financial_data_import"
+          - "market_data_sync"
+          - "company_data_enrichment"
+          - "document_processing"
+        stages:
+          - "input"
+          - "processing"
+          - "output"
+          - "archive"
+        example: "processing/financial_data_import/job-789/input/q4_2023_earnings.json"
+
+  # Static assets and public content
+  uprez-static-assets:
+    location: "US"  # Multi-region for global access
+    storage_class: "STANDARD"
+    public_access: true
+    cdn_enabled: true
+    
+    folders:
+      # Company logos and branding
+      assets:
+        structure: "assets/{asset_type}/{filename}"
+        asset_types:
+          - "company_logos"
+          - "exchange_logos"
+          - "industry_icons"
+          - "chart_templates"
+        example: "assets/company_logos/techcorp_logo.png"
+      
+      # Application static files
+      static:
+        structure: "static/{version}/{file_type}/{filename}"
+        file_types:
+          - "css"
+          - "js"
+          - "images"
+          - "fonts"
+        example: "static/v1.2.0/images/dashboard_background.jpg"
+
+  # Archive storage for long-term retention
+  uprez-archive-cold:
+    location: "US-CENTRAL1"
+    storage_class: "ARCHIVE"
+    folders:
+      # Archived company data (>7 years old)
+      archived_companies:
+        structure: "archived/{year}/{company_id}/{document_type}/{filename}"
+        example: "archived/2017/old-company-123/financial_statements/annual_report_2017.pdf"
+      
+      # Archived valuations
+      archived_valuations:
+        structure: "archived/{year}/{organization_id}/{valuation_id}/{filename}"
+        example: "archived/2018/org-456/val-789/dcf_model_archive.xlsx"
+
+# =====================================================
+# File Metadata Schema (stored in Firestore)
+# =====================================================
+
+file_metadata_schema:
+  collection: "file_metadata"
+  document_structure:
+    # File identification
+    file_id: "string"  # UUID
+    bucket: "string"   # GCS bucket name
+    path: "string"     # Full GCS path
+    filename: "string" # Original filename
+    
+    # File attributes
+    content_type: "string"  # MIME type
+    size: "number"          # File size in bytes
+    md5_hash: "string"      # File integrity hash
+    
+    # Categorization
+    document_type: "string" # prospectus, financial_statement, etc.
+    entity_type: "string"   # company, ipo, valuation, etc.
+    entity_id: "string"     # Related entity UUID
+    
+    # Processing status
+    processing_status: "string" # uploaded, processing, processed, error
+    extracted_text: "string"    # OCR/text extraction results
+    extracted_data: "object"    # Structured data extraction
+    
+    # Access control
+    organization_id: "string"
+    created_by: "string"      # User ID
+    access_level: "string"    # private, organization, public
+    
+    # Timestamps and versioning
+    created_at: "timestamp"
+    updated_at: "timestamp"
+    version: "number"
+    
+    # Tags and search
+    tags: "array<string>"
+    search_keywords: "array<string>"
+    
+    # Retention and compliance
+    retention_policy: "string"  # retain_forever, business_retention, legal_hold
+    deletion_date: "timestamp"  # Scheduled deletion date
+    
+    # Quality and validation
+    validation_status: "string" # pending, valid, invalid, warning
+    validation_errors: "array<string>"
+
+# =====================================================
+# Security and Access Control
+# =====================================================
+
+security_configuration:
+  # IAM roles and permissions
+  iam_roles:
+    # Service account for application access
+    uprez-app-service-account:
+      roles:
+        - "roles/storage.objectViewer"      # Read access to documents
+        - "roles/storage.objectCreator"     # Write access for uploads
+        - "roles/storage.legacyBucketReader" # List bucket contents
+    
+    # Service account for data processing
+    uprez-etl-service-account:
+      roles:
+        - "roles/storage.objectAdmin"       # Full access for ETL processes
+        - "roles/storage.legacyBucketWriter" # Bucket management
+    
+    # Service account for backups
+    uprez-backup-service-account:
+      roles:
+        - "roles/storage.objectCreator"     # Create backup files
+        - "roles/storage.objectViewer"      # Read for verification
+  
+  # Bucket-level permissions
+  bucket_permissions:
+    uprez-documents-prod:
+      uniform_bucket_level_access: true
+      prevent_public_access: true
+      
+    uprez-static-assets:
+      uniform_bucket_level_access: false  # Allow object-level ACLs
+      public_read_access: true           # For CDN serving
+    
+    uprez-archive-cold:
+      uniform_bucket_level_access: true
+      prevent_public_access: true
+      retention_policy: "7 years"
+
+  # Encryption configuration
+  encryption:
+    default_kms_key: "projects/uprez-valuation/locations/us-central1/keyRings/uprez-storage/cryptoKeys/documents"
+    customer_managed_keys: true
+    
+# =====================================================
+# CDN and Performance Optimization
+# =====================================================
+
+cdn_configuration:
+  # Cloud CDN for static assets
+  cloud_cdn:
+    enabled: true
+    backend_buckets:
+      - uprez-static-assets
+    cache_settings:
+      default_ttl: 3600      # 1 hour
+      max_ttl: 86400         # 24 hours
+      client_ttl: 3600       # 1 hour
+    compression: true
+    
+  # Custom domain mapping
+  domain_mapping:
+    assets.uprez.com: "uprez-static-assets"
+    cdn.uprez.com: "uprez-static-assets"
+
+# =====================================================
+# Monitoring and Logging
+# =====================================================
+
+monitoring:
+  # Cloud Monitoring metrics
+  metrics:
+    - storage_usage_by_bucket
+    - request_count_by_bucket
+    - bandwidth_usage
+    - error_rate_by_operation
+    - average_response_time
+  
+  # Alerting policies
+  alerts:
+    high_storage_usage:
+      condition: "storage_usage > 80%"
+      notification: "ops-team@uprez.com"
+    
+    high_error_rate:
+      condition: "error_rate > 5%"
+      notification: "dev-team@uprez.com"
+    
+    unusual_access_patterns:
+      condition: "request_count > baseline * 2"
+      notification: "security-team@uprez.com"
+
+  # Audit logging
+  audit_logs:
+    enabled: true
+    log_types:
+      - "ADMIN_READ"
+      - "DATA_READ"
+      - "DATA_WRITE"
+    retention: "400 days"  # Regulatory compliance
+
+# =====================================================
+# Data Processing Workflows
+# =====================================================
+
+processing_workflows:
+  # Document upload processing
+  document_upload:
+    triggers:
+      - event: "google.storage.object.finalize"
+        bucket: "uprez-documents-prod"
+        path_filter: "uploads/**"
+    
+    steps:
+      1. virus_scan:
+          service: "Cloud Security Command Center"
+          timeout: "5 minutes"
+      
+      2. content_extraction:
+          service: "Document AI"
+          operations:
+            - text_extraction
+            - table_extraction
+            - form_parsing
+      
+      3. metadata_enrichment:
+          service: "Cloud Functions"
+          operations:
+            - entity_linking
+            - tag_generation
+            - search_indexing
+      
+      4. validation:
+          service: "Cloud Functions"
+          checks:
+            - file_format_validation
+            - content_quality_check
+            - compliance_verification
+      
+      5. archive_original:
+          destination: "companies/{company_id}/originals/"
+          retention: "permanent"
+  
+  # Financial data processing
+  financial_data_import:
+    triggers:
+      - schedule: "0 2 * * *"  # Daily at 2 AM
+      - manual: true
+    
+    steps:
+      1. data_extraction:
+          sources:
+            - sec_filings
+            - company_reports
+            - market_data_feeds
+      
+      2. data_transformation:
+          operations:
+            - format_standardization
+            - currency_conversion
+            - ratio_calculations
+      
+      3. data_validation:
+          checks:
+            - completeness_check
+            - accuracy_verification
+            - outlier_detection
+      
+      4. data_loading:
+          destinations:
+            - bigquery_warehouse
+            - postgresql_cache
+            - redis_cache
+
+# =====================================================
+# Backup and Disaster Recovery
+# =====================================================
+
+backup_strategy:
+  # Cross-region replication
+  replication:
+    enabled: true
+    destination_region: "US-EAST1"
+    replication_time: "15 minutes"
+  
+  # Scheduled backups
+  scheduled_backups:
+    frequency: "daily"
+    retention: "30 days"
+    backup_types:
+      - full_bucket_sync
+      - incremental_changes
+      - metadata_export
+  
+  # Point-in-time recovery
+  versioning:
+    enabled: true
+    retention_period: "30 days"
+    
+  # Disaster recovery procedures
+  disaster_recovery:
+    rto: "4 hours"      # Recovery Time Objective
+    rpo: "15 minutes"   # Recovery Point Objective
+    
+    procedures:
+      1. automated_failover:
+          trigger: "region_outage"
+          destination: "us-east1"
+      
+      2. data_restoration:
+          method: "cross_region_replication"
+          verification: "checksum_validation"
+      
+      3. service_resumption:
+          steps:
+            - dns_failover
+            - application_restart
+            - data_validation
+
+# =====================================================
+# Cost Optimization
+# =====================================================
+
+cost_optimization:
+  # Storage class transitions
+  lifecycle_management:
+    rules:
+      frequently_accessed:
+        condition: "age < 30 days"
+        storage_class: "STANDARD"
+      
+      infrequently_accessed:
+        condition: "30 days <= age < 90 days"
+        storage_class: "NEARLINE"
+      
+      archive_storage:
+        condition: "age >= 365 days"
+        storage_class: "COLDLINE"
+      
+      long_term_archive:
+        condition: "age >= 2555 days"  # 7 years
+        storage_class: "ARCHIVE"
+  
+  # Data deduplication
+  deduplication:
+    enabled: true
+    hash_comparison: "md5"
+    
+  # Compression
+  compression:
+    enabled: true
+    algorithms: ["gzip", "brotli"]
+    file_types: ["text", "json", "csv", "xml"]
+
+# =====================================================
+# Integration Endpoints
+# =====================================================
+
+api_integration:
+  # Upload endpoints
+  upload_urls:
+    signed_url_generation:
+      method: "POST"
+      endpoint: "/api/v1/files/upload-url"
+      authentication: "JWT"
+      
+    direct_upload:
+      method: "POST" 
+      endpoint: "/api/v1/files/upload"
+      max_file_size: "100MB"
+      
+  # Download endpoints
+  download_urls:
+    signed_url_generation:
+      method: "GET"
+      endpoint: "/api/v1/files/{file_id}/download-url"
+      expiry: "1 hour"
+      
+    streaming_download:
+      method: "GET"
+      endpoint: "/api/v1/files/{file_id}/stream"
+      supports_range_requests: true
+
+# =====================================================
+# Compliance and Governance
+# =====================================================
+
+compliance:
+  # Data residency requirements
+  data_residency:
+    default_region: "US"
+    customer_controlled: true
+    
+  # Retention policies
+  retention_policies:
+    financial_documents: "7 years"      # SEC requirement
+    user_data: "user_defined"
+    audit_logs: "7 years"
+    system_logs: "2 years"
+    
+  # Privacy controls
+  privacy:
+    pii_detection: true
+    right_to_erasure: true
+    data_portability: true
+    
+  # Regulatory compliance
+  regulations:
+    - "SOX"      # Sarbanes-Oxley Act
+    - "GDPR"     # General Data Protection Regulation
+    - "CCPA"     # California Consumer Privacy Act
+    - "SEC"      # Securities and Exchange Commission rules

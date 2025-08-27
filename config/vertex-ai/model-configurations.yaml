@@ -1,0 +1,241 @@
+# Vertex AI Model Configurations for IPO Valuation Platform
+
+# Core Valuation Models
+valuation_models:
+  dcf_prediction:
+    model_type: "custom"
+    framework: "tensorflow"
+    machine_type: "n1-standard-4"
+    accelerator_type: "NVIDIA_TESLA_T4"
+    accelerator_count: 1
+    replica_count: 3
+    max_replica_count: 10
+    traffic_split:
+      - model_id: "dcf_v1"
+        traffic_percentage: 100
+    explanation_config:
+      enable_feature_attributions: true
+      top_k: 10
+    monitoring:
+      enable_logging: true
+      sampling_rate: 0.1
+
+  market_multiple_analysis:
+    model_type: "automl"
+    problem_type: "regression"
+    target_column: "valuation_multiple"
+    feature_columns:
+      - "revenue_growth"
+      - "profit_margin"
+      - "market_sector"
+      - "company_size"
+      - "debt_ratio"
+    optimization_objective: "minimize-rmse"
+    budget_milli_node_hours: 1000
+
+  risk_assessment:
+    model_type: "custom"
+    framework: "scikit-learn"
+    machine_type: "n1-highmem-2"
+    replica_count: 2
+    max_replica_count: 8
+    features:
+      - "financial_metrics"
+      - "market_conditions"
+      - "regulatory_factors"
+      - "management_quality"
+    model_artifacts:
+      - "risk_model.joblib"
+      - "feature_scaler.joblib"
+      - "label_encoder.joblib"
+
+# Natural Language Processing Models
+nlp_models:
+  sentiment_analysis:
+    model_type: "automl"
+    problem_type: "classification"
+    dataset_type: "text"
+    target_column: "sentiment_score"
+    classification_type: "MULTICLASS"
+    classes:
+      - "positive"
+      - "neutral"
+      - "negative"
+      - "very_positive"
+      - "very_negative"
+
+  document_classification:
+    model_type: "custom"
+    framework: "tensorflow"
+    base_model: "bert-base-uncased"
+    fine_tuning:
+      learning_rate: 0.00002
+      batch_size: 16
+      epochs: 3
+    classes:
+      - "prospectus"
+      - "financial_statement"
+      - "risk_factors"
+      - "management_discussion"
+      - "auditor_report"
+
+# Time Series Models
+time_series_models:
+  market_trend_prediction:
+    model_type: "automl"
+    problem_type: "forecasting"
+    time_column: "timestamp"
+    target_column: "market_index"
+    time_series_identifier_column: "market_sector"
+    forecast_horizon: 30
+    context_window: 90
+    optimization_objective: "minimize-quantile-loss"
+
+  volatility_forecast:
+    model_type: "custom"
+    framework: "tensorflow"
+    model_class: "LSTMModel"
+    sequence_length: 60
+    features:
+      - "price_volatility"
+      - "volume"
+      - "market_cap"
+      - "beta"
+    hyperparameters:
+      lstm_units: 128
+      dropout_rate: 0.2
+      learning_rate: 0.001
+
+# Model Serving Configuration
+model_serving:
+  prediction_endpoints:
+    - name: "ipo-valuation-endpoint"
+      models:
+        - "dcf_prediction"
+        - "market_multiple_analysis"
+        - "risk_assessment"
+      traffic_allocation:
+        dcf_prediction: 40
+        market_multiple_analysis: 35
+        risk_assessment: 25
+      
+    - name: "document-analysis-endpoint"
+      models:
+        - "sentiment_analysis"
+        - "document_classification"
+      enable_explanation: true
+      
+    - name: "market-forecast-endpoint"
+      models:
+        - "market_trend_prediction"
+        - "volatility_forecast"
+      batch_prediction: true
+
+# Feature Store Configuration
+feature_store:
+  entity_types:
+    - name: "company"
+      id_columns: ["company_id"]
+    - name: "market"
+      id_columns: ["market_sector"]
+    - name: "document"
+      id_columns: ["document_id"]
+
+  feature_groups:
+    financial_metrics:
+      entity_type: "company"
+      features:
+        - name: "revenue_growth"
+          value_type: "DOUBLE"
+        - name: "profit_margin" 
+          value_type: "DOUBLE"
+        - name: "debt_ratio"
+          value_type: "DOUBLE"
+        - name: "cash_flow"
+          value_type: "DOUBLE"
+      
+    market_indicators:
+      entity_type: "market"
+      features:
+        - name: "sector_pe_ratio"
+          value_type: "DOUBLE"
+        - name: "market_volatility"
+          value_type: "DOUBLE"
+        - name: "trading_volume"
+          value_type: "INT64"
+
+    document_features:
+      entity_type: "document"
+      features:
+        - name: "sentiment_score"
+          value_type: "DOUBLE"
+        - name: "risk_mentions"
+          value_type: "INT64"
+        - name: "forward_looking_statements"
+          value_type: "INT64"
+
+# Pipeline Configuration
+pipelines:
+  training_pipeline:
+    name: "ipo-valuation-training"
+    schedule: "0 2 * * 0"  # Weekly at 2 AM Sunday
+    steps:
+      - name: "data_ingestion"
+        component: "data_ingestion_component"
+      - name: "data_preprocessing"
+        component: "preprocessing_component"
+      - name: "feature_engineering"
+        component: "feature_engineering_component"
+      - name: "model_training"
+        component: "training_component"
+      - name: "model_evaluation"
+        component: "evaluation_component"
+      - name: "model_deployment"
+        component: "deployment_component"
+
+  batch_prediction_pipeline:
+    name: "ipo-batch-prediction"
+    schedule: "0 */6 * * *"  # Every 6 hours
+    steps:
+      - name: "data_extraction"
+        component: "batch_data_component"
+      - name: "feature_preparation"
+        component: "feature_prep_component"
+      - name: "batch_prediction"
+        component: "batch_predict_component"
+      - name: "results_storage"
+        component: "results_storage_component"
+
+# Monitoring and Alerting
+monitoring:
+  model_monitoring:
+    enable_drift_detection: true
+    drift_threshold: 0.1
+    skew_threshold: 0.05
+    
+  prediction_drift:
+    enable: true
+    alert_threshold: 0.15
+    notification_channels:
+      - "projects/PROJECT_ID/notificationChannels/NOTIFICATION_CHANNEL_ID"
+      
+  performance_monitoring:
+    latency_threshold_ms: 1000
+    error_rate_threshold: 0.05
+    qps_threshold: 100
+
+# Security and Compliance
+security:
+  service_account: "ml-service-account@PROJECT_ID.iam.gserviceaccount.com"
+  encryption:
+    enable_cmek: true
+    kms_key_name: "projects/PROJECT_ID/locations/LOCATION/keyRings/RING_ID/cryptoKeys/KEY_ID"
+  
+  vpc_config:
+    network: "projects/PROJECT_ID/global/networks/ml-network"
+    subnet: "projects/PROJECT_ID/regions/REGION/subnetworks/ml-subnet"
+    
+  private_endpoints: true
+  authorized_networks:
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
