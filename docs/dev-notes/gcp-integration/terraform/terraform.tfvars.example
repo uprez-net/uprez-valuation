@@ -1,0 +1,154 @@
+# Example Terraform variables file for IPO Valuation Platform
+# Copy this file to terraform.tfvars and update with your values
+
+# Project Configuration
+project_id  = "uprez-valuation-prod"
+environment = "production"
+region      = "australia-southeast1"
+zone        = "australia-southeast1-a"
+
+# Notification and Alerting
+alert_email         = "ml-platform-alerts@uprez.com"
+slack_channel      = "#ipo-platform-alerts"
+slack_webhook_url  = "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+
+# Machine Learning Configuration
+ml_training_machine_type      = "n1-highmem-8"
+ml_training_accelerator_type  = "NVIDIA_TESLA_T4"
+ml_training_accelerator_count = 2
+
+model_serving_machine_type = "n1-standard-4"
+model_serving_min_replicas = 2
+model_serving_max_replicas = 20
+
+# Feature Store Configuration
+featurestore_online_serving_nodes = 3
+featurestore_min_nodes           = 2
+featurestore_max_nodes           = 15
+
+# BigQuery Configuration
+bigquery_default_table_expiration_days = 365
+bigquery_slot_reservation              = 200
+bigquery_slot_commitment              = "ANNUAL"
+
+# Storage Configuration
+storage_retention_policy_days = 2555  # 7 years for financial compliance
+enable_storage_versioning   = true
+
+# Document AI Configuration
+document_ai_processors = {
+  prospectus = {
+    type         = "FORM_PARSER_PROCESSOR"
+    display_name = "IPO Prospectus Parser"
+  }
+  annual_report = {
+    type         = "FORM_PARSER_PROCESSOR"
+    display_name = "Annual Report Parser"
+  }
+  financial_statement = {
+    type         = "FORM_PARSER_PROCESSOR"
+    display_name = "Financial Statement Parser"
+  }
+  quarterly_report = {
+    type         = "FORM_PARSER_PROCESSOR"
+    display_name = "Quarterly Report Parser"
+  }
+}
+
+# Natural Language Configuration
+natural_language_sentiment_enabled        = true
+natural_language_entity_sentiment_enabled = true
+
+# Monitoring Configuration
+monitoring_retention_days   = 90
+enable_detailed_monitoring = true
+alerting_policy_enabled    = true
+
+# Security Configuration
+enable_audit_logs           = true
+enable_vpc_flow_logs       = true
+require_ssl                = true
+enable_private_google_access = true
+enable_cmek                = false
+cmek_key_ring             = "ipo-valuation-keyring"
+
+# Networking Configuration
+vpc_cidr_range = "10.0.0.0/16"
+authorized_networks = [
+  {
+    name  = "office-network"
+    value = "203.0.113.0/24"
+  },
+  {
+    name  = "vpn-network"
+    value = "198.51.100.0/24"
+  }
+]
+
+# Kubernetes and Container Configuration
+enable_workload_identity = true
+kubernetes_namespace     = "ipo-valuation"
+
+# CI/CD Configuration
+enable_cicd   = true
+github_owner = "uprez-company"
+github_repo  = "uprez-valuation"
+
+# Cost Optimization
+enable_preemptible_instances  = false  # Use dedicated for production
+budget_amount                = 10000
+budget_threshold_percentage  = 85
+enable_auto_scaling         = true
+enable_spot_instances       = false   # Use dedicated for production
+
+# Backup and Disaster Recovery
+enable_cross_region_backup = true
+backup_retention_days     = 90
+disaster_recovery_region  = "australia-southeast2"
+
+# Feature Flags
+enable_experimental_features = false
+enable_gpu_sharing          = false
+
+# Data Residency and Compliance
+data_residency_region = "australia-southeast1"
+
+# Resource Quotas
+vertex_ai_quota_models    = 200
+vertex_ai_quota_endpoints = 100
+
+# External API Configuration
+external_apis = {
+  asx_data_api = {
+    enabled        = true
+    api_key_secret = "asx-data-api-key"
+    rate_limit     = 2000
+  }
+  reuters_api = {
+    enabled        = true
+    api_key_secret = "reuters-api-key"
+    rate_limit     = 1000
+  }
+  morningstar_api = {
+    enabled        = false
+    api_key_secret = "morningstar-api-key"
+    rate_limit     = 500
+  }
+}
+
+# Tagging and Labeling
+additional_labels = {
+  "compliance"    = "sox-gdpr"
+  "data-class"    = "confidential"
+  "backup-policy" = "daily"
+}
+cost_center = "ml-platform"
+owner_team  = "data-science"
+
+# Performance and Scaling
+max_training_jobs_concurrent = 10
+prediction_cache_ttl        = 600  # 10 minutes
+
+# Development and Testing (set to false for production)
+enable_sandbox_mode  = false
+enable_debug_logging = false

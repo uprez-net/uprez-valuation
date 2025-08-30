@@ -1,0 +1,472 @@
+# Data Processing Configuration for IPO Valuation Platform
+# This file contains comprehensive configuration for all data processing components
+
+# ====================================
+# FINANCIAL DATA PREPROCESSING CONFIG
+# ====================================
+financial_preprocessing:
+  # Data cleaning settings
+  cleaning:
+    price_validation:
+      min_price: 0.001                    # Minimum valid price (0.1 cent)
+      max_daily_change: 0.5               # Maximum 50% daily price change
+      validate_ohlc_relationships: true   # Ensure High >= max(Open, Close), etc.
+    
+    volume_validation:
+      min_volume: 0                       # Minimum volume (0 for no trades)
+      max_volume_spike: 10.0              # Maximum 1000% volume spike
+    
+    corporate_actions:
+      adjust_for_splits: true             # Adjust for stock splits
+      adjust_for_dividends: true          # Adjust for dividend payments
+      adjustment_source: "asx_api"        # Source for adjustment factors
+
+  # Missing value handling
+  missing_values:
+    default_method: "business_day_interpolation"  # Default imputation method
+    methods:
+      forward_fill:
+        limit: 5                          # Max consecutive days to forward fill
+      business_day_interpolation:
+        trading_calendar: "ASX"           # Use ASX trading calendar
+      sector_mean:
+        require_min_companies: 3          # Minimum companies in sector
+      knn:
+        n_neighbors: 5                    # Number of neighbors for KNN imputation
+      mice:
+        max_iter: 10                      # Maximum iterations for MICE
+    
+    column_specific:
+      prices: "business_day_interpolation"
+      volume: "forward_fill"
+      ratios: "sector_mean"
+
+  # Outlier detection
+  outlier_detection:
+    methods: ["zscore", "iqr", "isolation_forest", "macd_divergence"]
+    zscore:
+      threshold: 3.0                      # Z-score threshold
+    iqr:
+      multiplier: 1.5                     # IQR multiplier
+    isolation_forest:
+      contamination: 0.1                  # Expected proportion of outliers
+    macd_divergence:
+      ema_periods: [12, 26]              # EMA periods for MACD
+      signal_period: 9                    # Signal line period
+
+  # Normalization settings
+  normalization:
+    default_method: "robust"              # Default normalization method
+    by_sector: true                       # Normalize within sectors
+    methods:
+      standard:
+        with_mean: true
+        with_std: true
+      robust:
+        quantile_range: [0.25, 0.75]     # IQR range for robust scaling
+      minmax:
+        feature_range: [0, 1]             # Target range for MinMax scaling
+      quantile:
+        output_distribution: "normal"     # Target distribution
+
+  # Currency handling
+  currency:
+    base_currency: "AUD"                  # Base currency for all calculations
+    supported_currencies: ["USD", "EUR", "GBP", "JPY", "NZD", "HKD", "SGD"]
+    exchange_rate_source: "rba_api"       # Source for exchange rates
+    cache_ttl_hours: 24                   # Cache exchange rates for 24 hours
+    
+  # Inflation adjustment
+  inflation:
+    enable_adjustment: true               # Enable inflation adjustments
+    base_date: "2023-12-31"              # Reference date for real terms
+    data_source: "abs_api"                # Australian Bureau of Statistics
+    countries: ["Australia"]             # Countries for inflation data
+
+# ====================================
+# FEATURE ENGINEERING CONFIG
+# ====================================
+feature_engineering:
+  # Financial ratios
+  financial_ratios:
+    enabled: true
+    categories:
+      profitability: true                 # ROE, ROA, profit margins, etc.
+      liquidity: true                     # Current ratio, quick ratio, etc.
+      leverage: true                      # Debt ratios, interest coverage, etc.
+      efficiency: true                    # Asset turnover, inventory turnover, etc.
+      market: true                        # P/E, P/B, market cap ratios, etc.
+      growth: true                        # Growth rates and CAGR calculations
+    
+    calculation_options:
+      handle_missing: "interpolate"       # Method for missing values in ratios
+      winsorize_extreme: true             # Winsorize extreme ratio values
+      winsorize_limits: [0.01, 0.01]     # Winsorization limits (1% each tail)
+
+  # Technical indicators
+  technical_indicators:
+    enabled: true
+    categories:
+      trend: true                         # Moving averages, MACD, Bollinger Bands
+      momentum: true                      # RSI, Stochastic, Williams %R
+      volatility: true                    # ATR, Bollinger Band width
+      volume: true                        # OBV, Chaikin Money Flow, VWAP
+    
+    parameters:
+      moving_averages: [5, 10, 20, 50, 100, 200]  # MA periods
+      rsi_periods: [14, 21]               # RSI calculation periods
+      bollinger_period: 20                # Bollinger Bands period
+      bollinger_std: 2                    # Standard deviations for bands
+      macd_periods: [12, 26, 9]          # MACD fast, slow, signal
+
+  # Time-based features
+  temporal_features:
+    enabled: true
+    calendar_features: true               # Year, quarter, month, day features
+    cyclical_encoding: true               # Sin/cos encoding for cyclical features
+    business_calendar: true               # Business day and holiday features
+    lag_features:
+      enabled: true
+      periods: [1, 2, 3, 5, 10, 20, 60, 120, 252]  # Lag periods
+    rolling_features:
+      enabled: true
+      windows: [5, 10, 20, 60, 120, 252] # Rolling window sizes
+      statistics: ["mean", "std", "min", "max", "quantile"]  # Rolling statistics
+    seasonality:
+      enabled: true
+      auto_detect: true                   # Automatically detect seasonal patterns
+      financial_year_aware: true          # Australian financial year (July-June)
+
+  # Advanced transformations
+  transformations:
+    log_transforms:
+      enabled: true
+      skewness_threshold: 2.0             # Apply log transform if skewness > threshold
+      min_positive_value: 1e-6            # Minimum value for log transform
+    
+    polynomial_features:
+      enabled: false                      # Disabled by default (creates many features)
+      degree: 2                           # Polynomial degree
+      interaction_only: true              # Only interaction terms, not powers
+    
+    industry_adjustments:
+      enabled: true                       # Adjust ratios relative to industry
+      adjustment_method: "zscore"         # Method for industry adjustment
+      min_companies_in_industry: 5       # Minimum companies required in industry
+
+# ====================================
+# DOCUMENT PROCESSING CONFIG
+# ====================================
+document_processing:
+  # PDF processing
+  pdf:
+    extraction_methods: ["pdfplumber", "pymupdf", "pypdf2"]  # Try methods in order
+    table_extraction: "camelot"          # Table extraction method
+    ocr_fallback: true                   # Use OCR if text extraction fails
+    preserve_layout: true                # Preserve document layout
+    min_confidence: 0.8                  # Minimum OCR confidence score
+  
+  # OCR settings
+  ocr:
+    enabled: true
+    language: "en"                       # Primary language for OCR
+    correction_methods: ["character_substitution", "financial_vocabulary", "spell_check"]
+    financial_vocabulary_path: null      # Path to custom financial vocabulary
+    confidence_threshold: 0.8            # Minimum confidence for corrections
+  
+  # Multi-language support
+  multilanguage:
+    enabled: true
+    supported_languages: ["en", "zh", "ja", "ko", "de", "fr"]  # Supported languages
+    translation_service: "google"       # Translation service
+    preserve_financial_terms: true      # Keep financial terms untranslated
+  
+  # Document structure analysis
+  structure_analysis:
+    enabled: true
+    section_detection: true              # Identify document sections
+    table_detection: true                # Find and extract tables
+    figure_detection: true               # Identify figures and charts
+    hierarchy_analysis: true             # Build document hierarchy
+
+# ====================================
+# TEXT FEATURE ENGINEERING CONFIG
+# ====================================
+text_processing:
+  # TF-IDF vectorization
+  tfidf:
+    max_features: 5000                   # Maximum number of features
+    min_df: 2                            # Minimum document frequency
+    max_df: 0.95                         # Maximum document frequency
+    ngram_range: [1, 3]                  # N-gram range
+    use_idf: true                        # Use inverse document frequency
+    smooth_idf: true                     # Smooth IDF weights
+    sublinear_tf: true                   # Apply sublinear TF scaling
+    
+    preprocessing:
+      remove_financial_stopwords: true   # Remove domain-specific stopwords
+      preserve_financial_terms: true     # Preserve important financial terms
+      normalize_amounts: true            # Normalize monetary amounts
+      normalize_percentages: true        # Normalize percentage values
+  
+  # Word embeddings
+  embeddings:
+    enabled: true
+    model_type: "word2vec"               # word2vec, fasttext, or doc2vec
+    vector_size: 300                     # Embedding vector size
+    window: 10                           # Context window size
+    min_count: 5                         # Minimum word frequency
+    epochs: 20                           # Training epochs
+    workers: 4                           # Number of worker threads
+    sg: 1                                # Skip-gram (1) or CBOW (0)
+    
+    custom_training:
+      enabled: true                      # Train custom embeddings
+      financial_corpus_path: null        # Path to financial corpus
+      pretrained_model_path: null        # Path to pretrained model
+  
+  # Phrase analysis
+  phrase_analysis:
+    enabled: true
+    min_phrase_frequency: 2              # Minimum phrase frequency
+    max_phrase_length: 5                 # Maximum phrase length
+    categories:
+      risk_phrases: true                 # Risk-related phrases
+      growth_phrases: true               # Growth-related phrases
+      financial_performance: true       # Performance-related phrases
+      forward_looking: true              # Forward-looking statements
+  
+  # Sentiment analysis
+  sentiment_analysis:
+    enabled: true
+    method: "vader"                      # vader, textblob, or custom
+    financial_lexicon: true              # Use financial sentiment lexicon
+    aspect_based: true                   # Aspect-based sentiment analysis
+    confidence_threshold: 0.6            # Minimum confidence for sentiment
+
+# ====================================
+# DATA VALIDATION CONFIG
+# ====================================
+validation:
+  # Automated validation
+  automated_validation:
+    enabled: true
+    run_on_data_load: true               # Validate data immediately on load
+    validation_rules:
+      required_fields: true              # Check required fields
+      data_types: true                   # Validate data types
+      value_ranges: true                 # Check value ranges
+      relationships: true                # Validate data relationships
+      statistical_outliers: true        # Check for statistical outliers
+      temporal_consistency: true        # Validate temporal relationships
+    
+    severity_levels:
+      critical_threshold: 0             # Max critical issues allowed
+      error_threshold: 5                # Max error issues allowed
+      warning_threshold: 20             # Max warning issues allowed
+  
+  # Statistical integrity tests
+  statistical_tests:
+    enabled: true
+    significance_level: 0.05             # Statistical significance level
+    tests:
+      normality: true                    # Test for normal distribution
+      stationarity: true                 # Test for time series stationarity
+      autocorrelation: true              # Test for autocorrelation
+      heteroscedasticity: true           # Test for heteroscedasticity
+      independence: true                 # Test variable independence
+    
+    normality_tests: ["shapiro_wilk", "jarque_bera", "anderson_darling"]
+    stationarity_tests: ["adf", "kpss"]
+    autocorrelation_tests: ["durbin_watson", "ljung_box"]
+  
+  # Data quality monitoring
+  quality_monitoring:
+    enabled: true
+    alert_thresholds:
+      missing_data_percent: 0.1          # Alert if >10% missing data
+      outlier_percent: 0.05              # Alert if >5% outliers
+      validation_failure_rate: 0.02      # Alert if >2% validation failures
+    
+    drift_detection:
+      enabled: true                      # Enable data drift detection
+      reference_window_days: 30          # Reference period for comparison
+      drift_threshold: 0.1               # Statistical drift threshold
+      methods: ["ks_test", "psi"]        # Drift detection methods
+
+# ====================================
+# DATA INTEGRATION CONFIG
+# ====================================
+data_sources:
+  # ASX data integration
+  asx:
+    enabled: true
+    api_endpoints:
+      prices: "https://api.asx.com.au/v1/companies/{symbol}/prices"
+      announcements: "https://api.asx.com.au/v1/companies/{symbol}/announcements"
+      company_info: "https://api.asx.com.au/v1/companies/{symbol}"
+    
+    rate_limiting:
+      requests_per_second: 10            # API rate limit
+      burst_limit: 50                    # Burst request limit
+      backoff_strategy: "exponential"    # Backoff strategy
+    
+    caching:
+      enabled: true                      # Enable response caching
+      ttl_seconds: 300                   # Cache TTL (5 minutes)
+      cache_backend: "redis"             # Cache backend
+    
+    data_types: ["prices", "announcements", "dividends", "corporate_actions"]
+  
+  # ASIC data integration
+  asic:
+    enabled: true
+    api_endpoints:
+      company_extract: "https://download.asic.gov.au/api/companies/{acn}/extract"
+      bulk_download: "https://download.asic.gov.au/bulk/companies.zip"
+    
+    bulk_processing:
+      enabled: true                      # Enable bulk data processing
+      download_schedule: "daily"         # Download frequency
+      incremental_updates: true         # Process only changes
+    
+    data_types: ["company_extract", "annual_returns", "officer_details", "bulk_download"]
+  
+  # Real-time streaming
+  streaming:
+    enabled: false                       # Disabled by default
+    websocket:
+      url: "wss://api.asx.com.au/stream"
+      reconnect_interval: 5              # Reconnection interval (seconds)
+      heartbeat_interval: 30             # Heartbeat interval (seconds)
+    
+    message_processing:
+      batch_size: 100                    # Message batch size
+      processing_interval: 1             # Processing interval (seconds)
+      buffer_size: 10000                 # Message buffer size
+
+# ====================================
+# OUTPUT AND STORAGE CONFIG
+# ====================================
+output:
+  # Default output format
+  default_format: "parquet"             # parquet, csv, json, hdf5
+  
+  # Storage paths
+  paths:
+    processed_data: "data/processed/"    # Processed data storage
+    features: "data/features/"           # Feature matrices storage
+    models: "data/models/"               # Trained models storage
+    reports: "reports/"                  # Processing reports
+    cache: "cache/"                      # Temporary cache files
+  
+  # Compression settings
+  compression:
+    parquet: "snappy"                    # Parquet compression algorithm
+    csv: "gzip"                          # CSV compression
+    json: "gzip"                         # JSON compression
+  
+  # Versioning
+  versioning:
+    enabled: true                        # Enable data versioning
+    format: "timestamp"                  # Versioning format
+    keep_versions: 10                    # Number of versions to keep
+  
+  # Export settings
+  export:
+    include_metadata: true               # Include processing metadata
+    include_validation_results: true    # Include validation results
+    generate_report: true                # Generate processing report
+    report_format: "html"               # Report format (html, pdf, json)
+
+# ====================================
+# LOGGING AND MONITORING CONFIG
+# ====================================
+logging:
+  level: "INFO"                          # Log level
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  handlers:
+    - type: "file"
+      filename: "logs/data_processing.log"
+      max_bytes: 10485760                # 10MB max file size
+      backup_count: 5                    # Keep 5 backup files
+    - type: "console"
+      level: "WARNING"                   # Console log level
+
+monitoring:
+  enabled: true                          # Enable monitoring
+  metrics:
+    processing_duration: true            # Track processing times
+    data_quality_scores: true           # Track data quality metrics
+    error_rates: true                    # Track error rates
+    memory_usage: true                   # Track memory usage
+  
+  alerting:
+    enabled: true                        # Enable alerting
+    channels: ["email", "slack"]         # Alert channels
+    thresholds:
+      processing_failure_rate: 0.05     # Alert if >5% processing failures
+      data_quality_degradation: 0.1     # Alert if quality drops >10%
+      memory_usage_percent: 0.8         # Alert if memory usage >80%
+
+# ====================================
+# PERFORMANCE OPTIMIZATION CONFIG
+# ====================================
+performance:
+  # Parallel processing
+  parallel_processing:
+    enabled: true                        # Enable multiprocessing
+    max_workers: 4                       # Maximum worker processes
+    chunk_size: 1000                     # Data chunk size for processing
+  
+  # Memory optimization
+  memory_optimization:
+    enabled: true                        # Enable memory optimization
+    data_types_optimization: true       # Optimize pandas dtypes
+    categorical_encoding: true          # Use categorical encoding for strings
+    sparse_matrices: true               # Use sparse matrices where applicable
+  
+  # Caching strategy
+  caching:
+    enabled: true                        # Enable caching
+    backend: "redis"                     # Cache backend (redis, memory, disk)
+    cache_intermediate_results: true    # Cache intermediate processing results
+    cache_feature_matrices: true        # Cache computed feature matrices
+    ttl_hours: 24                       # Default cache TTL (24 hours)
+
+# ====================================
+# ENVIRONMENT-SPECIFIC OVERRIDES
+# ====================================
+# These settings can be overridden for different environments
+environments:
+  development:
+    logging:
+      level: "DEBUG"
+    validation:
+      statistical_tests:
+        enabled: false                   # Disable time-consuming tests in dev
+    performance:
+      parallel_processing:
+        max_workers: 2                   # Reduce workers in dev
+  
+  production:
+    logging:
+      level: "INFO"
+    validation:
+      automated_validation:
+        run_on_data_load: true
+    monitoring:
+      enabled: true
+      alerting:
+        enabled: true
+  
+  testing:
+    data_sources:
+      asx:
+        enabled: false                   # Disable external APIs in tests
+      asic:
+        enabled: false
+    output:
+      paths:
+        processed_data: "test_data/processed/"
+        features: "test_data/features/"
